@@ -52,7 +52,7 @@ def fetch_keyword_data(target_kw):
         return results
     except: return []
 
-# --- UI 설정 및 디자인 (현대적인 미니멀리즘) ---
+# --- UI 설정 및 디자인 (미니멀 & 햄둥이 컬러) ---
 st.set_page_config(page_title="햄둥이 키워드 마스터", layout="wide", page_icon="🐹")
 st.markdown(f"""
     <style>
@@ -65,7 +65,7 @@ st.markdown(f"""
         border-radius: 12px; font-weight: bold; margin-bottom: 12px; height: 3.5em; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }}
     
-    /* 지표(대시보드) 및 카드 스타일 */
+    /* 지표 및 카드 스타일 */
     .stMetric {{ background-color: #FBEECC; padding: 20px; border-radius: 15px; border-left: 8px solid #F4B742; margin-bottom: 10px; }}
     .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }}
     .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }}
@@ -93,6 +93,7 @@ with st.sidebar:
     st.button("🛍️ 쇼핑 인기 트렌드", on_click=set_page, args=("SHOP",), use_container_width=True)
     st.button("📰 오늘의 뉴스 이슈", on_click=set_page, args=("NEWS",), use_container_width=True)
     st.write("---")
+    # 사용자 요청 고정 문구 적용
     st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- 페이지 로직 ---
@@ -110,7 +111,7 @@ if st.session_state.page == "HOME":
         df = pd.DataFrame(st.session_state.kw_results)
         target = st.session_state.kw_target
         
-        # [복구] 상단 대시보드 지표 (Metric)
+        # 상단 대시보드 지표 (Metric)
         seed_data = df[df['키워드'].str.replace(" ", "") == target.replace(" ", "")]
         if seed_data.empty: seed_data = df.iloc[[0]]
         
@@ -121,7 +122,13 @@ if st.session_state.page == "HOME":
 
         st.divider()
         st.subheader("📊 연관 키워드 상세 분석")
-        st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True)
+        # [수정] 15개 키워드가 한눈에 보이도록 표 높이를 약 560px로 고정했습니다.
+        st.dataframe(
+            df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), 
+            use_container_width=True, 
+            hide_index=True,
+            height=560 
+        )
 
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 분야별 인기 트렌드 TOP 10")

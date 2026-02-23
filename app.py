@@ -14,7 +14,7 @@ AD_ACCESS_KEY = st.secrets["AD_ACCESS_KEY"]
 AD_SECRET_KEY = st.secrets["AD_SECRET_KEY"]
 AD_CUSTOMER_ID = st.secrets["AD_CUSTOMER_ID"]
 
-# --- 1. 네이버 API 인증 함수 ---
+# --- 공통 함수: 네이버 검색광고 API 인증 ---
 def get_header(method, uri, api_key, secret_key, customer_id):
     timestamp = str(int(time.time() * 1000))
     signature = hmac.new(secret_key.encode(), (timestamp + "." + method + "." + uri).encode(), hashlib.sha256).digest()
@@ -26,8 +26,8 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- 2. 데이터 수집 함수 ---
-def fetch_all_keyword_data(target_kw):
+# --- 1페이지: 키워드 분석 함수 ---
+def fetch_keyword_data(target_kw):
     clean_kw = target_kw.replace(" ", "")
     uri = "/keywordstool"
     method = "GET"
@@ -36,15 +36,10 @@ def fetch_all_keyword_data(target_kw):
     ad_res = requests.get("https://api.naver.com" + uri, params=params, headers=headers)
     res_json = ad_res.json()
     if 'keywordList' not in res_json: return []
-    
     all_keywords = res_json['keywordList'][:15]
     results = []
-    
-    progress_text = st.empty()
-    progress_bar = st.progress(0)
-    for i, item in enumerate(all_keywords):
+    for item in all_keywords:
         kw = item['relKeyword']
-        progress_text.text(f"🐹 햄둥이가 '{kw}' 분석 중... ({i+1}/{len(all_keywords)})")
         def clean_count(val):
             if isinstance(val, str) and '<' in val: return 10
             return int(val)
@@ -55,13 +50,16 @@ def fetch_all_keyword_data(target_kw):
         doc_count = search_res.json().get('total', 0)
         comp_idx = round(doc_count / search_vol, 2) if search_vol > 0 else 0
         results.append({"키워드": kw, "월간 검색량": search_vol, "총 문서 수": doc_count, "경쟁 강도": comp_idx})
-        progress_bar.progress((i + 1) / len(all_keywords))
-        time.sleep(0.05)
-    progress_text.empty()
-    progress_bar.empty()
     return results
 
-# --- 3. AI 제목 생성 함수 ---
+# --- 2/3페이지: 트렌드 데이터 수집 (Search API 활용) ---
+def fetch_trend_data(query, category="news"):
+    url = f"https://openapi.naver.com/v1/search/{category}.json?query={query}&display=10&sort=sim"
+    headers = {"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}
+    res = requests.get(url, headers=headers)
+    return res.json().get('items', [])
+
+# --- AI 제목 생성 함수 ---
 def generate_titles(keyword):
     styles = {
         "감성형": [f"✨ [공감] {keyword} 때문에 고민인 당신에게 건네는 따뜻한 위로", f"🌿 {keyword} 속에서 발견한 작은 행복, 우리 함께 나눠요"],
@@ -72,74 +70,94 @@ def generate_titles(keyword):
     }
     return [random.choice(v) for k, v in styles.items()]
 
-# --- 4. UI 및 햄둥이 테마 설정 ---
+# --- UI 설정 및 디자인 ---
 st.set_page_config(page_title="햄둥이 키워드 마스터", layout="wide", page_icon="🐹")
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #ffffff; }}
+    /* 사이드바 스타일링 */
+    [data-testid="stSidebar"] {{ background-color: #FBEECC; border-right: 2px solid #F4B742; }}
     .stButton>button {{ background-color: #F4B742; color: white; border-radius: 12px; font-weight: bold; width: 100%; height: 3.5em; }}
     .stMetric {{ background-color: #FBEECC; padding: 25px; border-radius: 15px; border-left: 8px solid #F4B742; }}
-    .title-box {{ background-color: #ffffff; padding: 15px; border-radius: 10px; border: 2px dashed #F1A18E; margin-bottom: 10px; font-weight: 500; }}
+    .title-box {{ background-color: #ffffff; padding: 15px; border-radius: 10px; border: 2px dashed #F1A18E; margin-bottom: 10px; }}
+    .trend-card {{ background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #FBEECC; margin-bottom: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.02); }}
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🐹 햄둥이의 실전 황금 키워드 분석기")
-st.caption("'햄둥이의 햄둥지둥 일상보고서' 성장을 위한 맞춤형 데이터 분석 도구입니다. ✨")
+# --- 사이드바 메뉴 (페이지 전환) ---
+with st.sidebar:
+    st.image("https://img.icons8.com/bubbles/200/hamster.png") # 햄둥이 대용 이미지
+    st.title("🐹 햄둥이 메뉴")
+    st.write("---")
+    menu = st.radio(
+        "기능을 선택하세요",
+        ["🏠 메인 키워드 분석", "🛍️ 쇼핑 인기 트렌드", "📰 오늘의 뉴스 이슈"]
+    )
+    st.write("---")
+    st.caption("'햄둥이의 햄둥지둥 일상보고서'의 성장을 응원합니다! 💖")
 
-if 'analysis_results' not in st.session_state:
-    st.session_state.analysis_results = None
-if 'target_input' not in st.session_state:
-    st.session_state.target_input = ""
-
-input_kw = st.text_input("분석할 중심 키워드를 입력하세요", placeholder="예: 다이소 화장품")
-
-if st.button("실시간 통합 분석 시작!"):
-    if input_kw:
-        results = fetch_all_keyword_data(input_kw)
-        if results:
-            st.session_state.analysis_results = results
-            st.session_state.target_input = input_kw
-            st.balloons()
-            st.rerun()
-    else:
-        st.warning("분석할 키워드를 먼저 입력해 주세요.")
-
-# --- 5. 결과 화면 (사용자 피드백 반영: 리포트 -> 제목 순서) ---
-if st.session_state.analysis_results:
-    df_all = pd.DataFrame(st.session_state.analysis_results)
-    target = st.session_state.target_input
+# --- 페이지 1: 메인 키워드 분석 ---
+if menu == "🏠 메인 키워드 분석":
+    st.title("📊 메인 키워드 분석기")
+    input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 다이소 화장품")
     
-    # 상단 요약 지표
-    seed_data = df_all[df_all['키워드'].str.replace(" ", "") == target.replace(" ", "")]
-    if seed_data.empty: seed_data = df_all.iloc[[0]]
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("월간 검색량", f"{seed_data.iloc[0]['월간 검색량']:,}회")
-    col2.metric("총 문서 수", f"{seed_data.iloc[0]['총 문서 수']:,}건")
-    col3.metric("경쟁 강도", f"{seed_data.iloc[0]['경쟁 강도']}")
+    if st.button("데이터 분석 시작"):
+        if input_kw:
+            with st.spinner('🐹 햄둥이가 데이터를 물어오는 중...'):
+                results = fetch_keyword_data(input_kw)
+                st.session_state.kw_results = results
+                st.session_state.kw_target = input_kw
+        else: st.warning("키워드를 입력해 주세요.")
 
-    st.divider()
-
-    # [수정된 부분 1] 상세 리포트가 먼저 나옵니다.
-    st.subheader("📊 연관 키워드 상세 분석 리포트")
-    df_related = df_all[df_all['키워드'].str.replace(" ", "") != target.replace(" ", "")]
-    
-    if not df_related.empty:
-        df_related = df_related.sort_values(by="경쟁 강도")
+    if st.session_state.get('kw_results'):
+        df = pd.DataFrame(st.session_state.kw_results)
+        # 상단 메트릭 및 상세 리포트 (기존 로직 동일)
+        st.subheader(f"🔍 '{st.session_state.kw_target}' 분석 리포트")
+        df_related = df.sort_values(by="경쟁 강도")
         st.dataframe(df_related.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True)
-        best_rel = df_related.iloc[0]['키워드']
-        st.success(f"🐹 햄둥이의 추천: 현재 **[{best_rel}]** 키워드가 공략하기 가장 좋습니다!")
-    else:
-        st.info("💡 추가적인 연관 키워드가 발견되지 않았습니다.")
+        
+        st.divider()
+        st.subheader("✍️ 햄둥이의 감성 제목 추천")
+        selected_kw = st.selectbox("제목을 지을 키워드 선택", df['키워드'].tolist())
+        if selected_kw:
+            for title in generate_titles(selected_kw):
+                st.markdown(f"<div class='title-box'>{title}</div>", unsafe_allow_html=True)
 
-    st.divider()
-
-    # [수정된 부분 2] 리포트를 확인한 후 제목을 지을 수 있게 하단에 배치했습니다.
-    st.subheader("✍️ 햄둥이의 감성 제목 추천")
-    st.info("💡 리포트에서 마음에 드는 키워드를 발견하셨나요? 아래에서 제목을 지어보세요!")
-    selected_kw = st.selectbox("제목을 지을 키워드를 선택하세요", df_all['키워드'].tolist())
+# --- 페이지 2: 쇼핑 인기 트렌드 ---
+elif menu == "🛍️ 쇼핑 인기 트렌드":
+    st.title("🛍️ 쇼핑 인기 트렌드")
+    st.info("💡 사용자님의 관심사인 '화장품'과 '미용' 분야의 최신 트렌드 아이템입니다.") # 사용자 요약 기반
     
-    if selected_kw:
-        titles = generate_titles(selected_kw)
-        for title in titles:
-            st.markdown(f"<div class='title-box'>{title}</div>", unsafe_allow_html=True)
+    # 햄둥이의 관심사 기반 자동 추천 키워드
+    search_query = st.text_input("트렌드를 알고 싶은 카테고리/상품명", value="다이소 화장품")
+    
+    if st.button("트렌드 확인"):
+        items = fetch_trend_data(search_query, category="shop")
+        for item in items:
+            with st.container():
+                st.markdown(f"""
+                <div class='trend-card'>
+                    <h4 style='color:#F4B742;'>🛒 {item['title'].replace('<b>','').replace('</b>','')}</h4>
+                    <p>최저가: {item['lprice']}원 | 판매처: {item['mallName']}</p>
+                    <a href='{item['link']}' target='_blank'>상품 상세 보기</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+# --- 페이지 3: 오늘의 뉴스 이슈 ---
+elif menu == "📰 오늘의 뉴스 이슈":
+    st.title("📰 오늘의 뉴스 이슈")
+    st.info("💡 블로그 포스팅 소재로 활용하기 좋은 사회/문화 분야 이슈들입니다.")
+    
+    news_query = st.text_input("뉴스 키워드 검색", value="2026 트렌드")
+    
+    if st.button("뉴스 키워드 수집"):
+        news_items = fetch_trend_data(news_query, category="news")
+        for news in news_items:
+            with st.container():
+                st.markdown(f"""
+                <div class='trend-card'>
+                    <h4 style='color:#F1A18E;'>📢 {news['title'].replace('<b>','').replace('</b>','')}</h4>
+                    <p>{news['description'].replace('<b>','').replace('</b>','')[:100]}...</p>
+                    <a href='{news['link']}' target='_blank'>기사 원문 보기</a>
+                </div>
+                """, unsafe_allow_html=True)

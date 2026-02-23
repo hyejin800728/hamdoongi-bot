@@ -52,16 +52,21 @@ def fetch_keyword_data(target_kw):
         return results
     except: return []
 
-# --- UI 설정 및 디자인 (미니멀 & 햄둥이 컬러) ---
+# --- UI 설정 및 디자인 (미니멀 스타일) ---
 st.set_page_config(page_title="햄둥이 키워드 마스터", layout="wide", page_icon="🐹")
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #ffffff; }}
     [data-testid="stSidebar"] {{ background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }}
+    
+    /* 사이드바 메뉴 버튼 */
     .stSidebar [data-testid="stVerticalBlock"] div[data-testid="stButton"] button {{
         background-color: #ffffff; border: 2px solid #F4B742; color: #333;
-        border-radius: 12px; font-weight: bold; margin-bottom: 12px; height: 4em; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border-radius: 12px; font-weight: bold; margin-bottom: 12px; height: 3.5em; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }}
+    
+    /* 챌린지 게이지 및 메트릭 스타일 */
+    .stProgress > div > div > div > div {{ background-color: #F4B742; }}
     .stMetric {{ background-color: #FBEECC; padding: 20px; border-radius: 15px; border-left: 8px solid #F4B742; }}
     .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }}
     .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }}
@@ -69,33 +74,56 @@ st.markdown(f"""
     .trend-list {{ padding: 15px; }}
     .trend-item {{ display: flex; align-items: center; margin-bottom: 8px; font-size: 0.9em; border-bottom: 1px solid #f9f9f9; padding-bottom: 5px; }}
     .trend-rank {{ color: #F4B742; font-weight: bold; width: 25px; margin-right: 8px; }}
+    
     @media (max-width: 768px) {{ [data-testid="column"] {{ width: 100% !important; flex: 1 1 100% !important; }} }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 세션 초기화 ---
+# --- 세션 초기화 및 상태 관리 ---
 if 'page' not in st.session_state: st.session_state.page = "HOME"
 if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
 def set_page(name): st.session_state.page = name
 
-# --- 사이드바: 버튼 메뉴 ---
+# --- 랜덤 응원 메시지 목록 ---
+cheer_messages = [
+    "🐹 오늘도 햄둥지둥 힘내서 글을 써봐요!",
+    "✨ 사용자님의 글솜씨에 햄둥이가 반했대요!",
+    "🚀 100개 달성하면 햄둥이가 파티를 열어줄지도?",
+    "💡 황금 키워드가 사용자님을 기다리고 있어요!",
+    "🐾 한 걸음씩 걷다 보면 어느새 100번째 글!",
+    "🌟 사용자님의 일상이 소중한 기록이 되고 있어요.",
+    "💖 햄둥이는 언제나 사용자님 편인 거 아시죠?"
+]
+
+# --- 사이드바: 메뉴 및 챌린지 카운터 ---
 with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align:center;'>햄둥이 메뉴</h3>", unsafe_allow_html=True)
     st.write("---")
+    
+    # 페이지 이동 버튼
     st.button("🏠 메인 키워드 분석", on_click=set_page, args=("HOME",), use_container_width=True)
     st.button("🛍️ 쇼핑 인기 트렌드", on_click=set_page, args=("SHOP",), use_container_width=True)
     st.button("📰 오늘의 뉴스 이슈", on_click=set_page, args=("NEWS",), use_container_width=True)
+    
     st.write("---")
-    # 블로그 100회 포스팅 챌린지 응원
-    st.caption("🐹 사용자님의 '100개 글쓰기' 도전을 응원합니다!")
+    
+    # 100개 글쓰기 챌린지 게이지 기능
+    st.subheader("🏁 100일 챌린지")
+    post_count = st.number_input("현재 포스팅 개수", min_value=0, max_value=100, value=0, step=1)
+    progress = post_count / 100
+    st.progress(progress)
+    st.markdown(f"<p style='text-align:right; font-size:0.8em; font-weight:bold;'>{post_count} / 100 완료!</p>", unsafe_allow_html=True)
+    
+    # 랜덤 응원 문구 표시
+    st.info(random.choice(cheer_messages))
 
 # --- 페이지 로직 ---
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석 리포트")
-    input_kw = st.text_input("분석할 키워드 입력", placeholder="예: 다이소 화장품")
-    if st.button("분석 시작", use_container_width=True):
+    input_kw = st.text_input("분석할 중심 키워드를 입력하세요", placeholder="예: 다이소 화장품")
+    if st.button("실시간 통합 분석 시작", use_container_width=True):
         if input_kw:
             with st.spinner('🐹 데이터를 수집 중...'):
                 st.session_state.kw_results = fetch_keyword_data(input_kw)
@@ -103,12 +131,11 @@ if st.session_state.page == "HOME":
                 st.rerun()
     if st.session_state.get('kw_results'):
         df = pd.DataFrame(st.session_state.kw_results)
-        # 상단 지표 및 경쟁 강도 컬러링 적용
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True)
 
 elif st.session_state.page == "SHOP":
-    st.title("🛍️ 쇼핑 인기 트렌드")
-    st.info("💡 분야별 실시간 인기 검색어입니다.")
+    st.title("🛍️ 분야별 인기 트렌드 TOP 10")
+    st.info("💡 각 분야별로 지금 가장 뜨거운 키워드들을 확인해보세요!")
     trends = {
         "💄 화장품/미용": ["리들샷", "미백 앰플", "수분 크림", "쿠션 팩트", "선크림", "아이크림", "클렌징 오일", "핸드크림", "틴트", "마스크팩"],
         "👗 패션의류": ["트위드 자켓", "원피스", "가죽 자켓", "경량 패딩", "여성 슬랙스", "가디건", "블라우스", "롱스커트", "와이드 팬츠", "바람막이"],
@@ -130,8 +157,8 @@ elif st.session_state.page == "SHOP":
 
 elif st.session_state.page == "NEWS":
     st.title("📰 오늘의 뉴스 이슈")
-    st.info("💡 분야별 실시간 핵심 뉴스입니다.")
-    news_cats = {"🗞️ 종합 뉴스": "종합", "💰 경제 뉴스": "경제", "💻 IT 뉴스": "IT", "🌿 생활 뉴스": "생활"}
+    st.info("💡 포스팅 소재로 활용하기 좋은 실시간 이슈 뉴스입니다.")
+    news_cats = {"🗞️ 주요 종합": "종합", "💰 경제 소식": "경제", "💻 IT 이슈": "IT", "🌿 생활 문화": "생활"}
     cols = st.columns(4)
     for i, (name, query) in enumerate(news_cats.items()):
         with cols[i]:

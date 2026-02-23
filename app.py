@@ -65,8 +65,8 @@ st.markdown(f"""
         border-radius: 12px; font-weight: bold; margin-bottom: 12px; height: 3.5em; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }}
     
-    /* 지표 및 카드 스타일 */
-    .stMetric {{ background-color: #FBEECC; padding: 20px; border-radius: 15px; border-left: 8px solid #F4B742; }}
+    /* 지표(대시보드) 및 카드 스타일 */
+    .stMetric {{ background-color: #FBEECC; padding: 20px; border-radius: 15px; border-left: 8px solid #F4B742; margin-bottom: 10px; }}
     .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }}
     .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }}
     .trend-header-news {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F1A18E; }}
@@ -89,14 +89,10 @@ with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align:center;'>햄둥이 메뉴</h3>", unsafe_allow_html=True)
     st.write("---")
-    
-    # 페이지 이동 버튼
     st.button("🏠 메인 키워드 분석", on_click=set_page, args=("HOME",), use_container_width=True)
     st.button("🛍️ 쇼핑 인기 트렌드", on_click=set_page, args=("SHOP",), use_container_width=True)
     st.button("📰 오늘의 뉴스 이슈", on_click=set_page, args=("NEWS",), use_container_width=True)
-    
     st.write("---")
-    # 사용자 요청 고정 문구 적용
     st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- 페이지 로직 ---
@@ -109,8 +105,22 @@ if st.session_state.page == "HOME":
                 st.session_state.kw_results = fetch_keyword_data(input_kw)
                 st.session_state.kw_target = input_kw
                 st.rerun()
+
     if st.session_state.get('kw_results'):
         df = pd.DataFrame(st.session_state.kw_results)
+        target = st.session_state.kw_target
+        
+        # [복구] 상단 대시보드 지표 (Metric)
+        seed_data = df[df['키워드'].str.replace(" ", "") == target.replace(" ", "")]
+        if seed_data.empty: seed_data = df.iloc[[0]]
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("월간 검색량", f"{seed_data.iloc[0]['월간 검색량']:,}회")
+        col2.metric("총 문서 수", f"{seed_data.iloc[0]['총 문서 수']:,}건")
+        col3.metric("경쟁 강도", f"{seed_data.iloc[0]['경쟁 강도']}")
+
+        st.divider()
+        st.subheader("📊 연관 키워드 상세 분석")
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True)
 
 elif st.session_state.page == "SHOP":

@@ -7,7 +7,7 @@ import base64
 import requests
 import random
 
-# --- [보안] Streamlit Secrets를 통해 API 키를 안전하게 불러옵니다 ---
+# --- [보안] Streamlit Secrets 적용 ---
 NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
 NAVER_CLIENT_SECRET = st.secrets["NAVER_CLIENT_SECRET"]
 AD_ACCESS_KEY = st.secrets["AD_ACCESS_KEY"]
@@ -26,7 +26,7 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- 2. 데이터 수집 함수 (띄어쓰기 방지 적용) ---
+# --- 2. 데이터 수집 함수 ---
 def fetch_all_keyword_data(target_kw):
     clean_kw = target_kw.replace(" ", "")
     uri = "/keywordstool"
@@ -61,7 +61,7 @@ def fetch_all_keyword_data(target_kw):
     progress_bar.empty()
     return results
 
-# --- 3. AI 제목 생성 함수 (랜덤 조합) ---
+# --- 3. AI 제목 생성 함수 ---
 def generate_titles(keyword):
     styles = {
         "감성형": [f"✨ [공감] {keyword} 때문에 고민인 당신에게 건네는 따뜻한 위로", f"🌿 {keyword} 속에서 발견한 작은 행복, 우리 함께 나눠요"],
@@ -77,31 +77,20 @@ st.set_page_config(page_title="햄둥이 키워드 마스터", layout="wide", pa
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #ffffff; }}
-    .stButton>button {{ 
-        background-color: #F4B742; color: white; border-radius: 12px; 
-        font-weight: bold; width: 100%; height: 3.5em; 
-    }}
-    .stMetric {{ 
-        background-color: #FBEECC; padding: 25px; border-radius: 15px; 
-        border-left: 8px solid #F4B742; 
-    }}
-    .title-box {{ 
-        background-color: #ffffff; padding: 15px; border-radius: 10px; 
-        border: 2px dashed #F1A18E; margin-bottom: 10px; font-weight: 500;
-    }}
+    .stButton>button {{ background-color: #F4B742; color: white; border-radius: 12px; font-weight: bold; width: 100%; height: 3.5em; }}
+    .stMetric {{ background-color: #FBEECC; padding: 25px; border-radius: 15px; border-left: 8px solid #F4B742; }}
+    .title-box {{ background-color: #ffffff; padding: 15px; border-radius: 10px; border: 2px dashed #F1A18E; margin-bottom: 10px; font-weight: 500; }}
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🐹 햄둥이의 실전 황금 키워드 분석기")
-st.caption("'햄둥이의 햄둥지둥 일상보고서' 블로그 성장을 위한 전용 도구입니다. ✨")
+st.caption("'햄둥이의 햄둥지둥 일상보고서' 성장을 위한 맞춤형 데이터 분석 도구입니다. ✨")
 
-# --- 5. 세션 상태 초기화 ---
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
 if 'target_input' not in st.session_state:
     st.session_state.target_input = ""
 
-# --- 6. 입력 및 분석 실행 ---
 input_kw = st.text_input("분석할 중심 키워드를 입력하세요", placeholder="예: 다이소 화장품")
 
 if st.button("실시간 통합 분석 시작!"):
@@ -115,12 +104,12 @@ if st.button("실시간 통합 분석 시작!"):
     else:
         st.warning("분석할 키워드를 먼저 입력해 주세요.")
 
-# --- 7. 결과 화면 표시 ---
+# --- 5. 결과 화면 (사용자 피드백 반영: 리포트 -> 제목 순서) ---
 if st.session_state.analysis_results:
     df_all = pd.DataFrame(st.session_state.analysis_results)
     target = st.session_state.target_input
     
-    # 상단 지표
+    # 상단 요약 지표
     seed_data = df_all[df_all['키워드'].str.replace(" ", "") == target.replace(" ", "")]
     if seed_data.empty: seed_data = df_all.iloc[[0]]
     
@@ -131,28 +120,26 @@ if st.session_state.analysis_results:
 
     st.divider()
 
-    # AI 제목 추천
+    # [수정된 부분 1] 상세 리포트가 먼저 나옵니다.
+    st.subheader("📊 연관 키워드 상세 분석 리포트")
+    df_related = df_all[df_all['키워드'].str.replace(" ", "") != target.replace(" ", "")]
+    
+    if not df_related.empty:
+        df_related = df_related.sort_values(by="경쟁 강도")
+        st.dataframe(df_related.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True)
+        best_rel = df_related.iloc[0]['키워드']
+        st.success(f"🐹 햄둥이의 추천: 현재 **[{best_rel}]** 키워드가 공략하기 가장 좋습니다!")
+    else:
+        st.info("💡 추가적인 연관 키워드가 발견되지 않았습니다.")
+
+    st.divider()
+
+    # [수정된 부분 2] 리포트를 확인한 후 제목을 지을 수 있게 하단에 배치했습니다.
     st.subheader("✍️ 햄둥이의 감성 제목 추천")
+    st.info("💡 리포트에서 마음에 드는 키워드를 발견하셨나요? 아래에서 제목을 지어보세요!")
     selected_kw = st.selectbox("제목을 지을 키워드를 선택하세요", df_all['키워드'].tolist())
     
     if selected_kw:
         titles = generate_titles(selected_kw)
         for title in titles:
             st.markdown(f"<div class='title-box'>{title}</div>", unsafe_allow_html=True)
-    
-    st.divider()
-
-    # 상세 리포트
-    st.subheader("📊 연관 키워드 상세 분석 리포트")
-    df_related = df_all[df_all['키워드'].str.replace(" ", "") != target.replace(" ", "")]
-    
-    if not df_related.empty:
-        df_related = df_related.sort_values(by="경쟁 강도")
-        st.dataframe(
-            df_related.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']),
-            use_container_width=True, hide_index=True
-        )
-        best_rel = df_related.iloc[0]['키워드']
-        st.success(f"🐹 햄둥이의 추천: **[{best_rel}]** 키워드가 현재 가장 공략하기 좋습니다!")
-    else:
-        st.info("💡 추가적인 연관 키워드가 발견되지 않았습니다.")

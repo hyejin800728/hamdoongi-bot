@@ -8,6 +8,7 @@ import base64
 import random
 
 # --- [보안] Streamlit Secrets 적용 ---
+# 사용자님이 이미 발급받아 등록해두신 Client ID와 Secret을 사용합니다.
 NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
 NAVER_CLIENT_SECRET = st.secrets["NAVER_CLIENT_SECRET"]
 AD_ACCESS_KEY = st.secrets["AD_ACCESS_KEY"]
@@ -26,7 +27,20 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- 데이터 수집 함수 ---
+# --- [진짜 실시간] 실시간 검색 제안어 수집 함수 ---
+# 고정 데이터 대신 네이버의 실시간 자동완성 데이터를 낚아채오는 핵심 함수입니다.
+def fetch_realtime_data(query):
+    if not query: return []
+    # 네이버 실시간 검색 제안 API 호출
+    url = f"https://ac.search.naver.com/nx/ac?q={query}&con=0&ans=2&r_format=json&r_enc=UTF-8&st=100"
+    try:
+        res = requests.get(url)
+        items = res.json()['items'][0]
+        return [item[0] for item in items][:10]
+    except:
+        return ["데이터를 가져올 수 없습니다."]
+
+# --- 데이터 수집 함수 (기존 로직 유지) ---
 @st.cache_data(ttl=600)
 def fetch_keyword_data(target_kw):
     clean_kw = target_kw.replace(" ", "")
@@ -58,22 +72,17 @@ st.markdown(f"""
     <style>
     .stApp {{ background-color: #ffffff; }}
     [data-testid="stSidebar"] {{ background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }}
-    
-    /* 사이드바 메뉴 버튼 */
     .stSidebar [data-testid="stVerticalBlock"] div[data-testid="stButton"] button {{
         background-color: #ffffff; border: 2px solid #F4B742; color: #333;
         border-radius: 12px; font-weight: bold; margin-bottom: 12px; height: 3.5em; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }}
-    
-    /* 지표 및 카드 스타일 */
     .stMetric {{ background-color: #FBEECC; padding: 20px; border-radius: 15px; border-left: 8px solid #F4B742; margin-bottom: 10px; }}
-    .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }}
-    .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }}
+    .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); min-height: 420px; }}
+    .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; font-size: 0.9em; }}
     .trend-header-news {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F1A18E; }}
     .trend-list {{ padding: 15px; }}
-    .trend-item {{ display: flex; align-items: center; margin-bottom: 8px; font-size: 0.9em; border-bottom: 1px solid #f9f9f9; padding-bottom: 5px; }}
+    .trend-item {{ display: flex; align-items: center; margin-bottom: 8px; font-size: 0.85em; border-bottom: 1px solid #f9f9f9; padding-bottom: 5px; }}
     .trend-rank {{ color: #F4B742; font-weight: bold; width: 25px; margin-right: 8px; }}
-    
     @media (max-width: 768px) {{ [data-testid="column"] {{ width: 100% !important; flex: 1 1 100% !important; }} }}
     </style>
     """, unsafe_allow_html=True)
@@ -84,7 +93,7 @@ if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
 def set_page(name): st.session_state.page = name
 
-# --- 사이드바: 메뉴 및 고정 응원 문구 ---
+# --- 사이드바 ---
 with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align:center;'>햄둥이 메뉴</h3>", unsafe_allow_html=True)
@@ -93,7 +102,6 @@ with st.sidebar:
     st.button("🛍️ 쇼핑 인기 트렌드", on_click=set_page, args=("SHOP",), use_container_width=True)
     st.button("📰 오늘의 뉴스 이슈", on_click=set_page, args=("NEWS",), use_container_width=True)
     st.write("---")
-    # 사용자 요청 고정 문구 적용
     st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- 페이지 로직 ---
@@ -102,55 +110,35 @@ if st.session_state.page == "HOME":
     input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 다이소 화장품")
     if st.button("실시간 통합 분석 시작", use_container_width=True):
         if input_kw:
-            with st.spinner('🐹 데이터를 수집 중...'):
+            with st.spinner('🐹 데이터를 분석 중...'):
                 st.session_state.kw_results = fetch_keyword_data(input_kw)
                 st.session_state.kw_target = input_kw
                 st.rerun()
-
     if st.session_state.get('kw_results'):
         df = pd.DataFrame(st.session_state.kw_results)
-        target = st.session_state.kw_target
-        
-        # 상단 대시보드 지표 (Metric)
-        seed_data = df[df['키워드'].str.replace(" ", "") == target.replace(" ", "")]
-        if seed_data.empty: seed_data = df.iloc[[0]]
-        
+        seed_data = df.iloc[0]
         col1, col2, col3 = st.columns(3)
-        col1.metric("월간 검색량", f"{seed_data.iloc[0]['월간 검색량']:,}회")
-        col2.metric("총 문서 수", f"{seed_data.iloc[0]['총 문서 수']:,}건")
-        col3.metric("경쟁 강도", f"{seed_data.iloc[0]['경쟁 강도']}")
-
+        col1.metric("월간 검색량", f"{seed_data['월간 검색량']:,}회")
+        col2.metric("총 문서 수", f"{seed_data['총 문서 수']:,}건")
+        col3.metric("경쟁 강도", f"{seed_data['경쟁 강도']}")
         st.divider()
-        st.subheader("📊 연관 키워드 상세 분석")
-        # [수정] 15개 키워드가 한눈에 보이도록 표 높이를 약 560px로 고정했습니다.
-        st.dataframe(
-            df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), 
-            use_container_width=True, 
-            hide_index=True,
-            height=560 
-        )
+        st.subheader("📊 연관 키워드 상세 분석 (스크롤 없음)")
+        st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=560)
 
 elif st.session_state.page == "SHOP":
-    st.title("🛍️ 분야별 인기 트렌드 TOP 10")
-    st.info("💡 각 분야별 실시간 인기 검색어입니다.")
-    trends = {
-        "💄 화장품/미용": ["리들샷", "미백 앰플", "수분 크림", "쿠션 팩트", "선크림", "아이크림", "클렌징 오일", "핸드크림", "틴트", "마스크팩"],
-        "👗 패션의류": ["트위드 자켓", "원피스", "가죽 자켓", "경량 패딩", "여성 슬랙스", "가디건", "블라우스", "롱스커트", "와이드 팬츠", "바람막이"],
-        "👜 패션잡화": ["카드지갑", "에코백", "크로스백", "캡모자", "양말 세트", "백팩", "선글라스", "헤어 집게핀", "숄더백", "벨트"],
-        "🍎 식품": ["닭가슴살", "제로 콜라", "햇반", "견과류", "단백질 쉐이크", "사과 10kg", "밀키트", "스테비아 토마토", "탄산수", "고구마"],
-        "⚽ 스포츠/레저": ["골프공", "테니스 라켓", "요가 매트", "캠핑 의자", "등산화", "자전거", "수영복", "아령", "러닝화", "배드민턴"],
-        "🏠 생활/건강": ["규조토 발매트", "먼지없는 이불", "욕실 청소용품", "멀티탭", "옷걸이", "주방 선반", "영양제 통", "마스크", "실내화", "물티슈"],
-        "💻 디지털/가전": ["아이패드 케이스", "무선 이어폰", "보조배터리", "가습기", "블루투스 키보드", "스마트 워치", "노트북 파우치", "전기포트", "마우스 패드", "거치대"],
-        "🛋️ 가구/인테리어": ["전신 거울", "수납장", "좌식 책상", "조명 스탠드", "벽시계", "커튼", "러그", "빈백 소파", "행거", "디퓨저"]
-    }
-    items_list = list(trends.items())
+    st.title("🛍️ 실시간 쇼핑 트렌드 뱅크")
+    st.info("💡 카테고리명을 수정하면 네이버의 진짜 실시간 트렌드 키워드를 물어옵니다!")
+    # 사용자 취향 반영 8개 카테고리
+    default_cats = ["다이소 화장품", "여성 의류", "캐스퍼 용품", "밀키트 추천", "캠핑 장비", "영양제", "자취 가전", "인테리어 소품"]
+    
     for i in range(0, 8, 4):
         cols = st.columns(4)
         for j in range(4):
-            cat, kw_list = items_list[i+j]
             with cols[j]:
-                html = "".join([f"<div class='trend-item'><span class='trend-rank'>{idx+1}</span>{val}</div>" for idx, val in enumerate(kw_list)])
-                st.markdown(f"<div class='trend-card'><div class='trend-header'>{cat}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
+                cat_name = st.text_input(f"카테고리 {i+j+1}", value=default_cats[i+j], key=f"cat_{i+j}")
+                real_kws = fetch_realtime_data(cat_name)
+                html = "".join([f"<div class='trend-item'><span class='trend-rank'>{idx+1}</span>{val}</div>" for idx, val in enumerate(real_kws)])
+                st.markdown(f"<div class='trend-card'><div class='trend-header'>🔍 {cat_name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
 
 elif st.session_state.page == "NEWS":
     st.title("📰 오늘의 뉴스 이슈")
@@ -161,6 +149,6 @@ elif st.session_state.page == "NEWS":
         with cols[i]:
             url = f"https://openapi.naver.com/v1/search/news.json?query={query}&display=5"
             headers = {"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}
-            news = requests.get(url, headers=headers).json().get('items', [])
-            html = "".join([f"<div class='trend-item'>🔗 <a href='{n['link']}' target='_blank' style='color:#555; text-decoration:none;'>{n['title'][:30].replace('<b>','').replace('</b>','') + '...'}</a></div>" for n in news])
+            news_items = requests.get(url, headers=headers).json().get('items', [])
+            html = "".join([f"<div class='trend-item'>🔗 <a href='{n['link']}' target='_blank' style='color:#555; text-decoration:none;'>{n['title'][:30].replace('<b>','').replace('</b>','') + '...'}</a></div>" for n in news_items])
             st.markdown(f"<div class='trend-card'><div class='trend-header-news'>{name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)

@@ -62,21 +62,18 @@ def fetch_keyword_data(target_kw):
         return results
     except: return []
 
-# --- UI 설정 및 햄둥이 컬러 테마 ---
-# 몸통: #F4B742, 배: #FBEECC, 볼터치: #F1A18E
+# --- UI 설정 및 테마 컬러 ---
 st.set_page_config(page_title="햄스터 브레인", layout="wide", page_icon="🐹")
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #ffffff; }}
     [data-testid="stSidebar"] {{ background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }}
     
-    /* 사이드바 메뉴 버튼 */
     .stSidebar [data-testid="stVerticalBlock"] div[data-testid="stButton"] button {{
         background-color: #ffffff; border: 2px solid #F4B742; color: #333;
         border-radius: 12px; font-weight: bold; margin-bottom: 12px; height: 3.5em; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }}
     
-    /* 지표 및 카드 스타일 */
     .stMetric {{ background-color: #FBEECC; padding: 20px; border-radius: 15px; border-left: 8px solid #F4B742; margin-bottom: 10px; }}
     .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); min-height: 410px; }}
     .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }}
@@ -95,7 +92,7 @@ if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
 def set_page(name): st.session_state.page = name
 
-# --- 사이드바: 메뉴 및 고정 응원 문구 ---
+# --- 사이드바 ---
 with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align:center;'>햄둥이 메뉴</h3>", unsafe_allow_html=True)
@@ -107,7 +104,6 @@ with st.sidebar:
     st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- 페이지 로직 ---
-# 1. 메인 키워드 분석 페이지 (복구 완료)
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석 리포트")
     input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 다이소 화장품")
@@ -130,10 +126,10 @@ if st.session_state.page == "HOME":
         col3.metric("경쟁 강도", f"{seed_data.iloc[0]['경쟁 강도']}")
 
         st.divider()
-        st.subheader("📊 연관 키워드 상세 분석 (15개 한눈에)")
+        # [수정] 불필요한 문구 제거
+        st.subheader("📊 연관 키워드 상세 분석")
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=560)
 
-# 2. 쇼핑 인기 트렌드 페이지 (실시간 연동 완료)
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드 발견")
     st.info("💡 카테고리별 실시간 인기 키워드입니다.")
@@ -151,7 +147,6 @@ elif st.session_state.page == "SHOP":
                 html = "".join([f"<div class='trend-item'><span class='trend-rank'>{idx+1}</span>{val}</div>" for idx, val in enumerate(trends)])
                 st.markdown(f"<div class='trend-card'><div class='trend-header'>{cat_name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
 
-# 3. 뉴스 이슈 페이지 (복구 완료)
 elif st.session_state.page == "NEWS":
     st.title("📰 오늘의 뉴스 이슈")
     st.info("💡 분야별 실시간 핵심 뉴스입니다.")

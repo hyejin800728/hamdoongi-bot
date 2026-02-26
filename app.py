@@ -37,15 +37,24 @@ def get_real_trends(query):
     except:
         return ["데이터 로드 중..."]
 
-# --- [데이터] 구글 실시간 급상승어 가져오기 ---
+# --- [데이터] 구글 실시간 급상승어 가져오기 (재시도 로직 추가) ---
 def get_google_trends():
-    try:
-        pytrends = TrendReq(hl='ko', tz=540)
-        # 한국(south_korea)의 실시간 인기 검색어 수집
-        df = pytrends.trending_searches(pn='south_korea')
-        return df[0].tolist()[:10]
-    except:
-        return ["현재 구글 트렌드 데이터를 불러올 수 없습니다. (나중에 다시 시도)"]
+    # 구글 서버 차단에 대비해 최대 3번까지 재시도합니다.
+    for attempt in range(3):
+        try:
+            # timeout 설정을 통해 응답이 없는 경우를 대비합니다.
+            pytrends = TrendReq(hl='ko', tz=540, timeout=(10, 25))
+            df = pytrends.trending_searches(pn='south_korea')
+            
+            if not df.empty:
+                return df[0].tolist()[:10]
+        except Exception:
+            if attempt < 2:
+                time.sleep(2) # 실패 시 2초간 휴식 후 재시도
+                continue
+            else:
+                return ["현재 구글 트렌드 호출이 많아 잠시 제한되었습니다. (잠시 후 다시 시도)"]
+    return ["데이터를 불러오는 데 실패했습니다."]
 
 # --- [데이터] 네이버 키워드 데이터 분석 ---
 @st.cache_data(ttl=600)
@@ -74,7 +83,6 @@ def fetch_keyword_data(target_kw):
     except: return []
 
 # --- UI 설정 및 햄둥이 컬러 테마 ---
-# 메인 몸통: #F4B742, 배: #FBEECC, 볼터치: #F1A18E
 st.set_page_config(page_title="햄스터 브레인", layout="wide", page_icon="🐹")
 st.markdown(f"""
     <style>
@@ -117,7 +125,6 @@ with st.sidebar:
     st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- 페이지 로직 ---
-# 1. 메인 키워드 분석
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석 리포트")
     input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 다이소 화장품")
@@ -143,13 +150,12 @@ if st.session_state.page == "HOME":
         st.subheader("📊 연관 키워드 상세 분석")
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=560)
 
-# 2. 쇼핑 인기 트렌드
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드 발견")
     st.info("💡 카테고리별 실시간 인기 키워드입니다.")
     shop_cats = {
         "💄 뷰티/화장품": "화장품", "👗 패션의류": "의류", "👜 패션잡화": "가방", "🍎 식품": "간식",
-        "⚽ 스포츠/레저": "운동", "🏠 생활/건강": "생활용품", "💻 가전/디지털": "전자제품", "🛋️ 인테리어": "소품"
+        "⚽ 스포츠/레저": "운동", "🏠 생활/건강": "생활용품", "💻 가전/디지털": "전자제품", "🛍️ 인테리어": "소품"
     }
     items = list(shop_cats.items())
     for i in range(0, 8, 4):
@@ -161,7 +167,6 @@ elif st.session_state.page == "SHOP":
                 html = "".join([f"<div class='trend-item'><span class='trend-rank'>{idx+1}</span>{val}</div>" for idx, val in enumerate(trends)])
                 st.markdown(f"<div class='trend-card'><div class='trend-header'>{cat_name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
 
-# 3. 뉴스 이슈
 elif st.session_state.page == "NEWS":
     st.title("📰 오늘의 뉴스 이슈")
     st.info("💡 분야별 실시간 핵심 뉴스입니다.")
@@ -171,18 +176,17 @@ elif st.session_state.page == "NEWS":
         with cols[i]:
             url = f"https://openapi.naver.com/v1/search/news.json?query={query}&display=5"
             headers = {"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}
-            news_items = requests.get(url, headers=headers).json().get('items', [])
+            news_res = requests.get(url, headers=headers).json()
+            news_items = news_res.get('items', [])
             html = "".join([f"<div class='trend-item'>🔗 <a href='{n['link']}' target='_blank' style='color:#555; text-decoration:none;'>{n['title'][:30].replace('<b>','').replace('</b>','') + '...'}</a></div>" for n in news_items])
-            st.markdown(f"<div class='trend-card'><div class='trend-header-news'>{name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='trend-card'><div class='trend-header'>{name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
 
-# 4. 구글 실시간 트렌드 (New 통합!)
 elif st.session_state.page == "GOOGLE":
     st.title("🌐 구글 실시간 급상승 트렌드")
     st.info("💡 한국에서 지금 가장 뜨거운 구글 검색어 상위 10개입니다.")
     with st.spinner('🐹 구글 트렌드 파도를 타는 중...'):
         g_trends = get_google_trends()
         
-        # 가독성 좋게 2컬럼으로 배치
         col_l, col_r = st.columns(2)
         for idx, val in enumerate(g_trends):
             col = col_l if idx < 5 else col_r

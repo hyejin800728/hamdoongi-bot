@@ -28,7 +28,6 @@ def get_header(method, uri, api_key, secret_key, customer_id):
     }
 
 # --- [데이터 수집 함수] ---
-
 def get_real_trends(query):
     url = f"https://ac.search.naver.com/nx/ac?q={query}&con=0&ans=2&r_format=json&r_enc=UTF-8&st=100"
     try:
@@ -75,7 +74,8 @@ def fetch_keyword_data_final(target_kw):
             blog_total = blog_res.get('total', 0)
             recent_month_cnt = sum(1 for post in blog_res.get('items', []) if post.get('postdate', '00000000') >= thirty_days_ago)
             
-            cafe_total = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_headers).json().get('total', 0)
+            cafe_res = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_headers).json()
+            cafe_total = cafe_res.get('total', 0)
             
             results.append({
                 "키워드": kw, "PC 검색량": pc_v, "모바일 검색량": mo_v, "총 검색량": tot_v,
@@ -96,20 +96,27 @@ st.markdown("""
     .quad-box { background-color: #FBEECC; padding: 20px; border-radius: 20px; border-left: 10px solid #F4B742; margin-bottom: 15px; min-height: 180px; }
     .quad-title { font-weight: bold; color: #555; font-size: 1.1em; margin-bottom: 15px; }
     
-    /* 검색량 아이콘 레이아웃 */
-    .search-stats { display: flex; justify-content: space-between; text-align: center; }
+    /* 공통 스탯 레이아웃 */
+    .stat-container { display: flex; justify-content: space-between; text-align: center; }
     .stat-item { flex: 1; }
     .stat-icon { font-size: 1.4em; margin-bottom: 5px; }
     .stat-val { font-size: 1.1em; font-weight: 800; color: #333; }
-    .stat-pct { font-size: 0.8em; color: #777; }
+    .stat-pct { font-size: 0.85em; color: #777; }
     
-    .metric-val { font-size: 2em; font-weight: 800; color: #333; }
+    /* 경쟁강도 배지 스타일 */
+    .status-badge {
+        display: inline-block; padding: 4px 12px; border-radius: 20px; color: white;
+        font-weight: bold; font-size: 0.75em; margin-left: 10px; vertical-align: middle;
+        box-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .metric-val { font-size: 2.2em; font-weight: 800; color: #333; display: inline-block; }
     .trend-card { background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; min-height: 420px; }
     .trend-header { background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 세션 관리 및 사이드바 ---
+# --- 세션 관리 ---
 if 'page' not in st.session_state: st.session_state.page = "HOME"
 if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
@@ -121,11 +128,8 @@ with st.sidebar:
     if st.button("🛍️ 쇼핑 인기 트렌드", use_container_width=True): st.session_state.page = "SHOP"
     if st.button("📰 오늘의 뉴스 이슈", use_container_width=True): st.session_state.page = "NEWS"
     if st.button("🌐 구글 실시간 트렌드", use_container_width=True): st.session_state.page = "GOOGLE"
-    st.write("---")
-    st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- [페이지 로직] ---
-
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석")
     input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 킬리안")
@@ -138,7 +142,6 @@ if st.session_state.page == "HOME":
 
     if st.session_state.get('kw_results'):
         df = pd.DataFrame(st.session_state.kw_results)
-        # 캐시 충돌 방지
         if 'PC 검색량' not in df.columns:
             st.warning("⚠️ 'C' 키를 눌러 캐시를 삭제해주세요!")
             st.stop()
@@ -147,10 +150,10 @@ if st.session_state.page == "HOME":
         seed_data = df[df['키워드'].str.replace(" ", "") == target.replace(" ", "")]
         info = seed_data.iloc[0] if not seed_data.empty else df.iloc[0]
 
-        # 4분할 레이아웃
         c1, c2 = st.columns(2)
         c3, c4 = st.columns(2)
 
+        # 1. 월간 검색량 (아이콘/백분율)
         with c1:
             tot = info['총 검색량']
             pc_p = (info['PC 검색량']/tot*100) if tot > 0 else 0
@@ -158,7 +161,7 @@ if st.session_state.page == "HOME":
             st.markdown(f"""
             <div class='quad-box'>
                 <div class='quad-title'>🔍 월간 검색량</div>
-                <div class='search-stats'>
+                <div class='stat-container'>
                     <div class='stat-item'><div class='stat-icon'>💻</div><div class='stat-val'>{info['PC 검색량']:,}</div><div class='stat-pct'>{pc_p:.1f}%</div></div>
                     <div class='stat-item'><div class='stat-icon'>📱</div><div class='stat-val'>{info['모바일 검색량']:,}</div><div class='stat-pct'>{mo_p:.1f}%</div></div>
                     <div class='stat-item'><div class='stat-icon'>➕</div><div class='stat-val'>{tot:,}</div><div class='stat-pct'>100%</div></div>
@@ -166,23 +169,56 @@ if st.session_state.page == "HOME":
             </div>
             """, unsafe_allow_html=True)
 
+        # 2. 경쟁강도 (버튼형 배지 & 로직 수정)
         with c2:
-            st.markdown(f"""<div class='quad-box'><div class='quad-title'>📈 분석 지표</div>
-                <div class='metric-val'>{info['경쟁 강도']}</div><div style='color:#777;'>상태: <b>{'낮음' if info['경쟁 강도'] < 1 else '보통'}</b></div></div>""", unsafe_allow_html=True)
+            comp = info['경쟁 강도']
+            # 경쟁강도 상태 판단 로직 및 색상 설정
+            if comp < 0.5: status, color = "매우 낮음", "#2ecc71" # 초록
+            elif comp < 1.0: status, color = "낮음", "#3498db"   # 파랑
+            elif comp < 5.0: status, color = "보통", "#f39c12"   # 노랑/주황
+            elif comp < 10.0: status, color = "높음", "#e67e22"  # 진한 주황
+            else: status, color = "매우 높음", "#e74c3c"        # 빨강
+            
+            st.markdown(f"""
+            <div class='quad-box'>
+                <div class='quad-title'>📈 경쟁강도</div>
+                <div class='metric-val'>{comp}</div>
+                <span class='status-badge' style='background-color:{color};'>{status}</span>
+                <div style='color:#777; font-size:0.85em; margin-top:10px;'>검색량 대비 문서 발행 비율</div>
+            </div>
+            """, unsafe_allow_html=True)
 
+        # 3. 콘텐츠 누적 발행 (아이콘/백분율화)
         with c3:
-            st.markdown(f"""<div class='quad-box'><div class='quad-title'>📚 콘텐츠 누적 발행</div>
-                <div class='metric-val'>{info['총 누적문서']:,}건</div><div style='color:#777;'>블로그 {info['블로그 누적']:,} | 카페 {info['카페 누적']:,}</div></div>""", unsafe_allow_html=True)
+            doc_tot = info['총 누적문서']
+            blog_p = (info['블로그 누적']/doc_tot*100) if doc_tot > 0 else 0
+            cafe_p = (info['카페 누적']/doc_tot*100) if doc_tot > 0 else 0
+            st.markdown(f"""
+            <div class='quad-box'>
+                <div class='quad-title'>📚 콘텐츠 누적 발행</div>
+                <div class='stat-container'>
+                    <div class='stat-item'><div class='stat-icon'>✍️</div><div class='stat-val'>{info['블로그 누적']:,}</div><div class='stat-pct'>{blog_p:.1f}%</div></div>
+                    <div class='stat-item'><div class='stat-icon'>☕</div><div class='stat-val'>{info['카페 누적']:,}</div><div class='stat-pct'>{cafe_p:.1f}%</div></div>
+                    <div class='stat-item'><div class='stat-icon'>➕</div><div class='stat-val'>{doc_tot:,}</div><div class='stat-pct'>100%</div></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
+        # 4. 최근 한 달 발행량
         with c4:
-            st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행 (추산)</div>
-                <div class='metric-val'>{info['최근 한 달 발행량']}건 / 100건</div><div style='color:#777;'>최신 100개 중 한 달 내 작성 비중</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='quad-box'>
+                <div class='quad-title'>📅 최신100개 중 한달 내 작성 비중</div>
+                <div class='metric-val'>{info['최근 한 달 발행량']}건</div>
+                <div style='color:#777; font-size:0.85em; margin-top:10px;'>최신 데이터 100건 중 최근 30일 이내 등록된 글</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         st.divider()
         st.subheader("📋 연관 키워드 상세 리스트")
-        # 15개 행을 스크롤 없이 보여주기 위해 높이를 넉넉히 설정 (600px)
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=580)
 
+# (SHOP, NEWS, GOOGLE 페이지는 이전과 동일)
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드")
     shop_cats = {"💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식", "⚽ 레저": "운동", "🏠 생활": "생활용품", "💻 가전": "전자제품", "🛋️ 소품": "인테리어"}

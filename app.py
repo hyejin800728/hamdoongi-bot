@@ -74,8 +74,7 @@ def fetch_keyword_data_final(target_kw):
             blog_total = blog_res.get('total', 0)
             recent_month_cnt = sum(1 for post in blog_res.get('items', []) if post.get('postdate', '00000000') >= thirty_days_ago)
             
-            cafe_res = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_headers).json()
-            cafe_total = cafe_res.get('total', 0)
+            cafe_total = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_headers).json().get('total', 0)
             
             results.append({
                 "키워드": kw, "PC 검색량": pc_v, "모바일 검색량": mo_v, "총 검색량": tot_v,
@@ -93,24 +92,24 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }
     .stSidebar button { background-color: #ffffff !important; border: 2px solid #F4B742 !important; border-radius: 12px !important; font-weight: bold !important; margin-bottom: 10px !important; }
     
-    .quad-box { background-color: #FBEECC; padding: 20px; border-radius: 20px; border-left: 10px solid #F4B742; margin-bottom: 15px; min-height: 180px; }
+    .quad-box { background-color: #FBEECC; padding: 25px; border-radius: 20px; border-left: 10px solid #F4B742; margin-bottom: 15px; min-height: 200px; }
     .quad-title { font-weight: bold; color: #555; font-size: 1.1em; margin-bottom: 15px; }
     
-    /* 공통 스탯 레이아웃 */
     .stat-container { display: flex; justify-content: space-between; text-align: center; }
     .stat-item { flex: 1; }
     .stat-icon { font-size: 1.4em; margin-bottom: 5px; }
     .stat-val { font-size: 1.1em; font-weight: 800; color: #333; }
     .stat-pct { font-size: 0.85em; color: #777; }
     
-    /* 경쟁강도 배지 스타일 */
     .status-badge {
-        display: inline-block; padding: 4px 12px; border-radius: 20px; color: white;
-        font-weight: bold; font-size: 0.75em; margin-left: 10px; vertical-align: middle;
-        box-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+        display: inline-block; padding: 5px 15px; border-radius: 20px; color: white;
+        font-weight: bold; font-size: 0.8em; margin-left: 10px; vertical-align: middle;
     }
     
-    .metric-val { font-size: 2.2em; font-weight: 800; color: #333; display: inline-block; }
+    .center-content { text-align: center; margin-top: 10px; }
+    .metric-val { font-size: 2.5em; font-weight: 800; color: #333; display: inline-block; }
+    .sub-info { color: #777; font-size: 0.9em; margin-top: 10px; }
+    
     .trend-card { background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; min-height: 420px; }
     .trend-header { background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }
     </style>
@@ -143,7 +142,7 @@ if st.session_state.page == "HOME":
     if st.session_state.get('kw_results'):
         df = pd.DataFrame(st.session_state.kw_results)
         if 'PC 검색량' not in df.columns:
-            st.warning("⚠️ 'C' 키를 눌러 캐시를 삭제해주세요!")
+            st.warning("⚠️ 캐시 충돌이 발생했습니다. 'C' 키를 눌러 삭제해 주세요!")
             st.stop()
             
         target = st.session_state.kw_target
@@ -169,26 +168,27 @@ if st.session_state.page == "HOME":
             </div>
             """, unsafe_allow_html=True)
 
-        # 2. 경쟁강도 (버튼형 배지 & 로직 수정)
+        # 2. 경쟁강도 (가운데 정렬 & 배지)
         with c2:
             comp = info['경쟁 강도']
-            # 경쟁강도 상태 판단 로직 및 색상 설정
-            if comp < 0.5: status, color = "매우 낮음", "#2ecc71" # 초록
-            elif comp < 1.0: status, color = "낮음", "#3498db"   # 파랑
-            elif comp < 5.0: status, color = "보통", "#f39c12"   # 노랑/주황
-            elif comp < 10.0: status, color = "높음", "#e67e22"  # 진한 주황
-            else: status, color = "매우 높음", "#e74c3c"        # 빨강
+            if comp < 0.5: status, color = "매우 낮음", "#2ecc71"
+            elif comp < 1.0: status, color = "낮음", "#3498db"
+            elif comp < 5.0: status, color = "보통", "#f39c12"
+            elif comp < 10.0: status, color = "높음", "#e67e22"
+            else: status, color = "매우 높음", "#e74c3c"
             
             st.markdown(f"""
             <div class='quad-box'>
                 <div class='quad-title'>📈 경쟁강도</div>
-                <div class='metric-val'>{comp}</div>
-                <span class='status-badge' style='background-color:{color};'>{status}</span>
-                <div style='color:#777; font-size:0.85em; margin-top:10px;'>검색량 대비 문서 발행 비율</div>
+                <div class='center-content'>
+                    <div class='metric-val'>{comp}</div>
+                    <span class='status-badge' style='background-color:{color};'>{status}</span>
+                    <div class='sub-info'>검색량 대비 문서 발행 비율</div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
-        # 3. 콘텐츠 누적 발행 (아이콘/백분율화)
+        # 3. 콘텐츠 누적 발행 (카페 아이콘 변경: 사람 모양)
         with c3:
             doc_tot = info['총 누적문서']
             blog_p = (info['블로그 누적']/doc_tot*100) if doc_tot > 0 else 0
@@ -198,19 +198,21 @@ if st.session_state.page == "HOME":
                 <div class='quad-title'>📚 콘텐츠 누적 발행</div>
                 <div class='stat-container'>
                     <div class='stat-item'><div class='stat-icon'>✍️</div><div class='stat-val'>{info['블로그 누적']:,}</div><div class='stat-pct'>{blog_p:.1f}%</div></div>
-                    <div class='stat-item'><div class='stat-icon'>☕</div><div class='stat-val'>{info['카페 누적']:,}</div><div class='stat-pct'>{cafe_p:.1f}%</div></div>
+                    <div class='stat-item'><div class='stat-icon'>👥</div><div class='stat-val'>{info['카페 누적']:,}</div><div class='stat-pct'>{cafe_p:.1f}%</div></div>
                     <div class='stat-item'><div class='stat-icon'>➕</div><div class='stat-val'>{doc_tot:,}</div><div class='stat-pct'>100%</div></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-        # 4. 최근 한 달 발행량
+        # 4. 최근 한 달 발행 (가운데 정렬 & 명칭 변경)
         with c4:
             st.markdown(f"""
             <div class='quad-box'>
-                <div class='quad-title'>📅 최신100개 중 한달 내 작성 비중</div>
-                <div class='metric-val'>{info['최근 한 달 발행량']}건</div>
-                <div style='color:#777; font-size:0.85em; margin-top:10px;'>최신 데이터 100건 중 최근 30일 이내 등록된 글</div>
+                <div class='quad-title'>📅 최근 한 달 발행</div>
+                <div class='center-content'>
+                    <div class='metric-val'>{info['최근 한 달 발행량']}건</div>
+                    <div class='sub-info'>최신 데이터 100건 중 30일 이내 등록된 글</div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -218,7 +220,7 @@ if st.session_state.page == "HOME":
         st.subheader("📋 연관 키워드 상세 리스트")
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=580)
 
-# (SHOP, NEWS, GOOGLE 페이지는 이전과 동일)
+# (쇼핑, 뉴스, 구글 탭 로직은 이전과 동일하므로 유지)
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드")
     shop_cats = {"💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식", "⚽ 레저": "운동", "🏠 생활": "생활용품", "💻 가전": "전자제품", "🛋️ 소품": "인테리어"}

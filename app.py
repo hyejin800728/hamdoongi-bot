@@ -5,9 +5,8 @@ import hmac
 import hashlib
 import time
 import base64
-import random
 import datetime
-from pytrends.request import TrendReq # 구글 트렌드 연동 라이브러리
+from pytrends.request import TrendReq
 
 # --- [보안] Streamlit Secrets 적용 ---
 NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
@@ -28,34 +27,9 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- [데이터] 네이버 실시간 트렌드 수집 (쇼핑) ---
-def get_real_trends(query):
-    url = f"https://ac.search.naver.com/nx/ac?q={query}&con=0&ans=2&r_format=json&r_enc=UTF-8&st=100"
-    try:
-        res = requests.get(url).json()
-        return [item[0] for item in res['items'][0]][:10]
-    except:
-        return ["데이터 로드 중..."]
-
-# --- [데이터] 구글 실시간 급상승어 가져오기 (재시도 로직) ---
-def get_google_trends():
-    for attempt in range(3):
-        try:
-            pytrends = TrendReq(hl='ko', tz=540, timeout=(10, 25))
-            df = pytrends.trending_searches(pn='south_korea')
-            if not df.empty:
-                return df[0].tolist()[:10]
-        except Exception:
-            if attempt < 2:
-                time.sleep(2)
-                continue
-            else:
-                return ["현재 구글 트렌드 호출이 많아 잠시 제한되었습니다. (잠시 후 다시 시도)"]
-    return ["데이터를 불러오는 데 실패했습니다."]
-
-# --- [데이터] 네이버 키워드 데이터 상세 분석 (블랙키위 스타일) ---
+# --- [데이터] 네이버 키워드 상세 분석 (블랙키위 4분할 스타일) ---
 @st.cache_data(ttl=600)
-def fetch_keyword_data(target_kw):
+def fetch_keyword_data_v2(target_kw):
     clean_kw = target_kw.replace(" ", "")
     uri = "/keywordstool"
     headers = get_header("GET", uri, AD_ACCESS_KEY, AD_SECRET_KEY, AD_CUSTOMER_ID)
@@ -66,16 +40,15 @@ def fetch_keyword_data(target_kw):
         res_json = res.json()
         if 'keywordList' not in res_json: return []
         
-        # 상위 15개 연관 키워드 추출
         all_keywords = res_json['keywordList'][:15]
         results = []
-        
-        # 검색 API 인증 헤더
         auth_headers = {"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}
+
+        # 최근 한 달 날짜 계산 (YYYYMMDD 형식)
+        thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y%m%d')
 
         for item in all_keywords:
             kw = item['relKeyword']
-            
             def clean_count(val):
                 if isinstance(val, str) and '<' in val: return 10
                 return int(val)
@@ -84,165 +57,138 @@ def fetch_keyword_data(target_kw):
             mo_vol = clean_count(item['monthlyMobileQcCnt'])
             total_vol = pc_vol + mo_vol
             
-            # 블로그 및 카페 문서수 개별 수집
-            blog_url = f"https://openapi.naver.com/v1/search/blog.json?query={kw}&display=1"
+            # 1. 블로그 데이터 수집 (누적 및 최근 100개 분석)
+            blog_url = f"https://openapi.naver.com/v1/search/blog.json?query={kw}&display=100&sort=sim"
             blog_res = requests.get(blog_url, headers=auth_headers).json()
-            blog_count = blog_res.get('total', 0)
+            blog_total = blog_res.get('total', 0)
             
+            # 최근 100개 중 30일 이내 글 수 카운트
+            recent_blog_cnt = 0
+            for post in blog_res.get('items', []):
+                if post.get('postdate', '00000000') >= thirty_days_ago:
+                    recent_blog_cnt += 1
+            
+            # 2. 카페 데이터 수집 (누적)
             cafe_url = f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1"
             cafe_res = requests.get(cafe_url, headers=auth_headers).json()
-            cafe_count = cafe_res.get('total', 0)
+            cafe_total = cafe_res.get('total', 0)
             
-            total_doc = blog_count + cafe_count
+            total_doc = blog_total + cafe_total
             
             results.append({
                 "키워드": kw,
                 "PC 검색량": pc_vol,
                 "모바일 검색량": mo_vol,
                 "총 검색량": total_vol,
-                "블로그 문서": blog_count,
-                "카페 문서": cafe_count,
-                "총 문서수": total_doc,
+                "블로그 누적": blog_total,
+                "카페 누적": cafe_total,
+                "총 누적문서": total_doc,
+                "최근한달 블로그(추산)": recent_blog_cnt,
                 "경쟁 강도": round(total_doc / total_vol, 2) if total_vol > 0 else 0
             })
         return results
     except: return []
 
-# --- UI 설정 및 햄둥이 컬러 테마 ---
-# 메인 몸통: #F4B742, 배: #FBEECC, 볼터치: #F1A18E
+# --- UI 설정 (햄둥이 테마) ---
 st.set_page_config(page_title="햄스터 브레인", layout="wide", page_icon="🐹")
-st.markdown(f"""
+st.markdown("""
     <style>
-    .stApp {{ background-color: #ffffff; }}
-    [data-testid="stSidebar"] {{ background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }}
-    
-    /* 사이드바 버튼 스타일 */
-    .stSidebar [data-testid="stVerticalBlock"] div[data-testid="stButton"] button {{
-        background-color: #ffffff; border: 2px solid #F4B742; color: #333;
-        border-radius: 12px; font-weight: bold; margin-bottom: 12px; height: 3.5em; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }}
-    
-    /* 지표 카드 스타일 */
-    .stMetric {{ 
-        background-color: #FBEECC; padding: 20px; border-radius: 15px; 
-        border-left: 8px solid #F4B742; margin-bottom: 10px; 
-    }}
-    
-    .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); min-height: 410px; }}
-    .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }}
-    .trend-list {{ padding: 15px; }}
-    .trend-item {{ display: flex; align-items: center; margin-bottom: 8px; font-size: 0.85em; border-bottom: 1px solid #f9f9f9; padding-bottom: 4px; color: #555; }}
-    .trend-rank {{ color: #F4B742; font-weight: bold; width: 25px; margin-right: 8px; }}
-    
-    @media (max-width: 768px) {{ [data-testid="column"] {{ width: 100% !important; flex: 1 1 100% !important; }} }}
+    .stApp { background-color: #ffffff; }
+    [data-testid="stSidebar"] { background-color: #FBEECC; border-right: 2px solid #F4B742; }
+    .quadrant-box {
+        background-color: #FBEECC; padding: 25px; border-radius: 20px;
+        border-left: 10px solid #F4B742; margin-bottom: 20px; height: 100%;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+    }
+    .quadrant-title { font-weight: bold; color: #555; font-size: 1.1em; margin-bottom: 15px; }
+    .metric-val { font-size: 1.8em; font-weight: 800; color: #333; }
+    .sub-text { font-size: 0.85em; color: #888; margin-top: 5px; }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# --- 세션 초기화 ---
+# --- 세션 관리 ---
 if 'page' not in st.session_state: st.session_state.page = "HOME"
 if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
 def set_page(name): st.session_state.page = name
 
-# --- 사이드바 ---
+# --- 사이드바 (동일) ---
 with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align:center;'>햄둥이 메뉴</h3>", unsafe_allow_html=True)
-    st.write("---")
     st.button("🏠 메인 키워드 분석", on_click=set_page, args=("HOME",), use_container_width=True)
-    st.button("🛍️ 쇼핑 인기 트렌드", on_click=set_page, args=("SHOP",), use_container_width=True)
-    st.button("📰 오늘의 뉴스 이슈", on_click=set_page, args=("NEWS",), use_container_width=True)
-    st.button("🌐 구글 실시간 트렌드", on_click=set_page, args=("GOOGLE",), use_container_width=True)
-    st.write("---")
-    st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
-# --- 페이지 로직 ---
-# 1. 메인 키워드 분석 (블랙키위 스타일 강화)
+# --- 메인 페이지 로직 ---
 if st.session_state.page == "HOME":
-    st.title("📊 메인 키워드 분석 리포트")
+    st.title("📊 키워드 4분할 정밀 분석")
     input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 킬리안")
+    
     if st.button("실시간 통합 분석 시작", use_container_width=True):
         if input_kw:
-            with st.spinner('🐹 데이터를 꼼꼼히 분석 중...'):
-                st.session_state.kw_results = fetch_keyword_data(input_kw)
+            with st.spinner('🐹 햄둥이가 데이터를 꼼꼼히 챙겨오고 있어요...'):
+                st.session_state.kw_results = fetch_keyword_data_v2(input_kw)
                 st.session_state.kw_target = input_kw
                 st.rerun()
 
     if st.session_state.get('kw_results'):
         df = pd.DataFrame(st.session_state.kw_results)
+        # 캐시 충돌 방지
+        if 'PC 검색량' not in df.columns:
+            st.warning("⚠️ 데이터 구조가 바뀌었습니다. 'C' 키를 눌러 캐시를 삭제해 주세요!")
+            st.stop()
+            
         target = st.session_state.kw_target
-        # 검색어와 정확히 일치하는 데이터 찾기
         seed_data = df[df['키워드'].str.replace(" ", "") == target.replace(" ", "")]
-        if seed_data.empty: seed_data = df.iloc[[0]]
-        
-        target_info = seed_data.iloc[0]
-        
-        # [섹션 1] 월간 검색량 상세
-        st.subheader(f"🔍 '{target}' 월간 검색량")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("PC 검색량", f"{target_info['PC 검색량']:,}회")
-        col2.metric("모바일 검색량", f"{target_info['모바일 검색량']:,}회")
-        col3.metric("총 검색량", f"{target_info['총 검색량']:,}회", delta="통합")
+        info = seed_data.iloc[0] if not seed_data.empty else df.iloc[0]
 
-        # [섹션 2] 콘텐츠 발행량 상세
-        st.subheader("📝 콘텐츠 발행량 (누적)")
-        col4, col5, col6 = st.columns(3)
-        col4.metric("블로그 문서", f"{target_info['블로그 문서']:,}건")
-        col5.metric("카페 문서", f"{target_info['카페 문서']:,}건")
-        col6.metric("총 문서 수", f"{target_info['총 문서수']:,}건")
+        # --- 4분할 레이아웃 (2x2) ---
+        row1_col1, row1_col2 = st.columns(2)
+        row2_col1, row2_col2 = st.columns(2)
 
-        # [섹션 3] 경쟁 분석
-        st.subheader("📈 시장 분석 지표")
-        comp_val = target_info['경쟁 강도']
-        # 블랙키위 스타일의 경쟁 강도 판단
-        if comp_val < 1: status = "낮음 (블루오션)"
-        elif comp_val < 5: status = "보통"
-        else: status = "높음 (레드오션)"
-        
-        st.metric("콘텐츠 포화도 (경쟁 강도)", f"{comp_val}", delta=status, delta_color="inverse")
+        # 1. 월간 검색량 (좌상)
+        with row1_col1:
+            st.markdown(f"""
+            <div class='quadrant-box'>
+                <div class='quadrant-title'>🔍 월간 검색량</div>
+                <div class='metric-val'>{info['총 검색량']:,}회</div>
+                <div class='sub-text'>💻 PC {info['PC 검색량']:,} | 📱 모바일 {info['모바일 검색량']:,}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 2. 분석 지표 (우상)
+        with row1_col2:
+            comp = info['경쟁 강도']
+            status = "블루오션" if comp < 1 else "보통" if comp < 5 else "레드오션"
+            st.markdown(f"""
+            <div class='quadrant-box'>
+                <div class='quadrant-title'>📈 분석 지표</div>
+                <div class='metric-val'>{comp}</div>
+                <div class='sub-text'>경쟁 강도: <b>{status}</b></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 3. 콘텐츠 발행량 누적 (좌하)
+        with row2_col1:
+            st.markdown(f"""
+            <div class='quadrant-box'>
+                <div class='quadrant-title'>📝 콘텐츠 발행량 (누적)</div>
+                <div class='metric-val'>{info['총 누적문서']:,}건</div>
+                <div class='sub-text'>블로그 {info['블로그 누적']:,} | 카페 {info['카페 누적']:,}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 4. 콘텐츠 발행량 최근 한 달 (우하)
+        with row2_col2:
+            recent_cnt = info['최근한달 블로그(추산)']
+            label = "매우 활발" if recent_cnt > 50 else "보통" if recent_cnt > 10 else "정체"
+            st.markdown(f"""
+            <div class='quadrant-box'>
+                <div class='quadrant-title'>📅 최근 한 달 발행 (블로그 100건 분석)</div>
+                <div class='metric-val'>{recent_cnt}건 / 100건</div>
+                <div class='sub-text'>최근 30일 활동성: <b>{label}</b> (최신 100개 기준)</div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.divider()
         st.subheader("📊 연관 키워드 상세 리스트")
-        st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=500)
-
-# 2. 쇼핑 인기 트렌드
-elif st.session_state.page == "SHOP":
-    st.title("🛍️ 실시간 쇼핑 트렌드 발견")
-    shop_cats = {"💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식", "⚽ 레저": "운동", "🏠 생활": "생활용품", "💻 가전": "전자제품", "🛋️ 소품": "인테리어"}
-    items = list(shop_cats.items())
-    for i in range(0, 8, 4):
-        cols = st.columns(4)
-        for j in range(4):
-            cat_name, search_query = items[i+j]
-            with cols[j]:
-                trends = get_real_trends(search_query)
-                html = "".join([f"<div class='trend-item'><span class='trend-rank'>{idx+1}</span>{val}</div>" for idx, val in enumerate(trends)])
-                st.markdown(f"<div class='trend-card'><div class='trend-header'>{cat_name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
-
-# 3. 뉴스 이슈
-elif st.session_state.page == "NEWS":
-    st.title("📰 오늘의 뉴스 이슈")
-    news_cats = {"🗞️ 종합": "종합", "💰 경제": "경제", "💻 IT": "IT", "🌿 생활": "생활"}
-    cols = st.columns(4)
-    for i, (name, query) in enumerate(news_cats.items()):
-        with cols[i]:
-            url = f"https://openapi.naver.com/v1/search/news.json?query={query}&display=5"
-            headers = {"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}
-            news_items = requests.get(url, headers=headers).json().get('items', [])
-            html = "".join([f"<div class='trend-item'>🔗 <a href='{n['link']}' target='_blank' style='color:#555; text-decoration:none;'>{n['title'][:25].replace('<b>','').replace('</b>','') + '...'}</a></div>" for n in news_items])
-            st.markdown(f"<div class='trend-card'><div class='trend-header'>{name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
-
-# 4. 구글 실시간 트렌드
-elif st.session_state.page == "GOOGLE":
-    st.title("🌐 구글 실시간 급상승 트렌드")
-    with st.spinner('🐹 구글 트렌드 파도를 타는 중...'):
-        g_trends = get_google_trends()
-        col_l, col_r = st.columns(2)
-        for idx, val in enumerate(g_trends):
-            col = col_l if idx < 5 else col_r
-            with col:
-                st.markdown(f"""
-                <div style='background-color:#ffffff; padding:15px; border-radius:10px; border:1px solid #eee; margin-bottom:10px; border-left: 5px solid #4285F4;'>
-                    <span style='color:#4285F4; font-weight:bold; margin-right:10px;'>{idx+1}</span> {val}
-                </div>
-                """, unsafe_allow_html=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)

@@ -7,6 +7,7 @@ import time
 import base64
 import random
 import datetime
+from pytrends.request import TrendReq # 구글 트렌드 연동 라이브러리
 
 # --- [보안] Streamlit Secrets 적용 ---
 NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
@@ -27,7 +28,7 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- [실시간] 트렌드 수집 함수 (쇼핑) ---
+# --- [데이터] 네이버 실시간 트렌드 수집 (쇼핑) ---
 def get_real_trends(query):
     url = f"https://ac.search.naver.com/nx/ac?q={query}&con=0&ans=2&r_format=json&r_enc=UTF-8&st=100"
     try:
@@ -36,7 +37,17 @@ def get_real_trends(query):
     except:
         return ["데이터 로드 중..."]
 
-# --- [분석] 키워드 데이터 수집 함수 ---
+# --- [데이터] 구글 실시간 급상승어 가져오기 ---
+def get_google_trends():
+    try:
+        pytrends = TrendReq(hl='ko', tz=540)
+        # 한국(south_korea)의 실시간 인기 검색어 수집
+        df = pytrends.trending_searches(pn='south_korea')
+        return df[0].tolist()[:10]
+    except:
+        return ["현재 구글 트렌드 데이터를 불러올 수 없습니다. (나중에 다시 시도)"]
+
+# --- [데이터] 네이버 키워드 데이터 분석 ---
 @st.cache_data(ttl=600)
 def fetch_keyword_data(target_kw):
     clean_kw = target_kw.replace(" ", "")
@@ -62,7 +73,8 @@ def fetch_keyword_data(target_kw):
         return results
     except: return []
 
-# --- UI 설정 및 테마 컬러 ---
+# --- UI 설정 및 햄둥이 컬러 테마 ---
+# 메인 몸통: #F4B742, 배: #FBEECC, 볼터치: #F1A18E
 st.set_page_config(page_title="햄스터 브레인", layout="wide", page_icon="🐹")
 st.markdown(f"""
     <style>
@@ -77,7 +89,7 @@ st.markdown(f"""
     .stMetric {{ background-color: #FBEECC; padding: 20px; border-radius: 15px; border-left: 8px solid #F4B742; margin-bottom: 10px; }}
     .trend-card {{ background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); min-height: 410px; }}
     .trend-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F4B742; }}
-    .trend-header-news {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #F1A18E; }}
+    .google-header {{ background-color: #f8f9fa; padding: 12px; border-radius: 12px 12px 0 0; font-weight: bold; text-align: center; border-top: 5px solid #4285F4; }}
     .trend-list {{ padding: 15px; }}
     .trend-item {{ display: flex; align-items: center; margin-bottom: 8px; font-size: 0.85em; border-bottom: 1px solid #f9f9f9; padding-bottom: 4px; color: #555; }}
     .trend-rank {{ color: #F4B742; font-weight: bold; width: 25px; margin-right: 8px; }}
@@ -100,10 +112,12 @@ with st.sidebar:
     st.button("🏠 메인 키워드 분석", on_click=set_page, args=("HOME",), use_container_width=True)
     st.button("🛍️ 쇼핑 인기 트렌드", on_click=set_page, args=("SHOP",), use_container_width=True)
     st.button("📰 오늘의 뉴스 이슈", on_click=set_page, args=("NEWS",), use_container_width=True)
+    st.button("🌐 구글 실시간 트렌드", on_click=set_page, args=("GOOGLE",), use_container_width=True)
     st.write("---")
     st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- 페이지 로직 ---
+# 1. 메인 키워드 분석
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석 리포트")
     input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 다이소 화장품")
@@ -126,10 +140,10 @@ if st.session_state.page == "HOME":
         col3.metric("경쟁 강도", f"{seed_data.iloc[0]['경쟁 강도']}")
 
         st.divider()
-        # [수정] 불필요한 문구 제거
         st.subheader("📊 연관 키워드 상세 분석")
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=560)
 
+# 2. 쇼핑 인기 트렌드
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드 발견")
     st.info("💡 카테고리별 실시간 인기 키워드입니다.")
@@ -147,6 +161,7 @@ elif st.session_state.page == "SHOP":
                 html = "".join([f"<div class='trend-item'><span class='trend-rank'>{idx+1}</span>{val}</div>" for idx, val in enumerate(trends)])
                 st.markdown(f"<div class='trend-card'><div class='trend-header'>{cat_name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
 
+# 3. 뉴스 이슈
 elif st.session_state.page == "NEWS":
     st.title("📰 오늘의 뉴스 이슈")
     st.info("💡 분야별 실시간 핵심 뉴스입니다.")
@@ -159,3 +174,21 @@ elif st.session_state.page == "NEWS":
             news_items = requests.get(url, headers=headers).json().get('items', [])
             html = "".join([f"<div class='trend-item'>🔗 <a href='{n['link']}' target='_blank' style='color:#555; text-decoration:none;'>{n['title'][:30].replace('<b>','').replace('</b>','') + '...'}</a></div>" for n in news_items])
             st.markdown(f"<div class='trend-card'><div class='trend-header-news'>{name}</div><div class='trend-list'>{html}</div></div>", unsafe_allow_html=True)
+
+# 4. 구글 실시간 트렌드 (New 통합!)
+elif st.session_state.page == "GOOGLE":
+    st.title("🌐 구글 실시간 급상승 트렌드")
+    st.info("💡 한국에서 지금 가장 뜨거운 구글 검색어 상위 10개입니다.")
+    with st.spinner('🐹 구글 트렌드 파도를 타는 중...'):
+        g_trends = get_google_trends()
+        
+        # 가독성 좋게 2컬럼으로 배치
+        col_l, col_r = st.columns(2)
+        for idx, val in enumerate(g_trends):
+            col = col_l if idx < 5 else col_r
+            with col:
+                st.markdown(f"""
+                <div style='background-color:#ffffff; padding:15px; border-radius:10px; border:1px solid #eee; margin-bottom:10px; border-left: 5px solid #4285F4;'>
+                    <span style='color:#4285F4; font-weight:bold; margin-right:10px;'>{idx+1}</span> {val}
+                </div>
+                """, unsafe_allow_html=True)

@@ -45,6 +45,7 @@ def get_google_trends():
             if attempt < 2: time.sleep(3); continue
     return ["현재 구글 서버 연결이 원활하지 않습니다."]
 
+# show_spinner=False로 설정하여 Running... 메시지를 숨깁니다.
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_keyword_data_final(target_kw):
     clean_kw = target_kw.replace(" ", "")
@@ -91,7 +92,7 @@ st.markdown("""
     .stApp { background-color: #ffffff; }
     [data-testid="stSidebar"] { background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }
     
-    /* 분석 시작 버튼 커스텀 (황금색 #F4B742) */
+    /* 분석 시작 버튼 커스텀 (황금색) */
     .stFormSubmitButton button {
         background-color: #F4B742 !important;
         color: white !important;
@@ -102,7 +103,7 @@ st.markdown("""
         transition: 0.3s !important;
     }
     .stFormSubmitButton button:hover {
-        background-color: #D69E35 !important; /* 조금 더 진한 황금색 */
+        background-color: #D69E35 !important;
         box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;
     }
 
@@ -128,18 +129,19 @@ if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
 with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align:center;'>햄둥이 메뉴</h3>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;'>햄스터 브레인</h2>", unsafe_allow_html=True) # 타이틀 변경
     st.write("---")
     if st.button("🏠 메인 키워드 분석", use_container_width=True): st.session_state.page = "HOME"
     if st.button("🛍️ 쇼핑 인기 트렌드", use_container_width=True): st.session_state.page = "SHOP"
     if st.button("📰 오늘의 뉴스 이슈", use_container_width=True): st.session_state.page = "NEWS"
     if st.button("🌐 구글 실시간 트렌드", use_container_width=True): st.session_state.page = "GOOGLE"
+    st.write("---")
+    st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
 # --- [페이지 로직] ---
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석")
     
-    # [중요] st.form을 사용하여 엔터키 검색 활성화
     with st.form("search_form", clear_on_submit=False):
         input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 조말론")
         submit_button = st.form_submit_button("실시간 통합 분석 시작", use_container_width=True)
@@ -154,7 +156,7 @@ if st.session_state.page == "HOME":
     if st.session_state.get('kw_results'):
         df = pd.DataFrame(st.session_state.kw_results)
         if 'PC 검색량' not in df.columns:
-            st.warning("⚠️ 캐시를 삭제해 주세요! (키보드 'C' 클릭)")
+            st.warning("⚠️ 캐시를 초기화해 주세요! (키보드 'C' 클릭)")
             st.stop()
             
         target = st.session_state.kw_target
@@ -195,7 +197,7 @@ if st.session_state.page == "HOME":
         st.divider()
         st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=580)
 
-# (쇼핑, 뉴스, 구글 탭 로직은 이전과 동일하므로 유지)
+# (SHOP, NEWS, GOOGLE 페이지 로직 동일)
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드")
     shop_cats = {"💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식", "⚽ 레저": "운동", "🏠 생활": "생활용품", "💻 가전": "전자제품", "🛋️ 소품": "인테리어"}

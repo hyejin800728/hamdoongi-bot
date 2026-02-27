@@ -24,9 +24,9 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- [데이터 수집] 캐시 리셋 v23 ---
+# --- [데이터 수집] v25 업그레이드 ---
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_keyword_data_v23(target_kw):
+def fetch_keyword_data_v25(target_kw):
     clean_kw = target_kw.replace(" ", "")
     uri = "/keywordstool"
     headers = get_header("GET", uri, AD_ACCESS_KEY, AD_SECRET_KEY, AD_CUSTOMER_ID)
@@ -49,9 +49,9 @@ def fetch_keyword_data_v23(target_kw):
             c_v = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_h).json().get('total', 0)
             
             results.append({
-                "v23_kw": kw, "v23_p": p, "v23_m": m, "v23_t": t, 
-                "v23_b": b_v, "v23_c": c_v, "v23_d": b_v + c_v, 
-                "v23_r": r_v, "v23_idx": round((b_v + c_v) / t, 2) if t > 0 else 0
+                "v25_kw": kw, "v25_p": p, "v25_m": m, "v25_t": t, 
+                "v25_b": b_v, "v25_c": c_v, "v25_d": b_v + c_v, 
+                "v25_r": r_v, "v25_idx": round((b_v + c_v) / t, 2) if t > 0 else 0
             })
         return results
     except: return []
@@ -62,7 +62,7 @@ def get_naver_trends(q):
         return [item[0] for item in res['items'][0]][:10]
     except: return ["데이터 로드 중..."]
 
-# --- [UI 디자인 정밀 주입] ---
+# --- [UI 디자인 정밀 설정] ---
 st.set_page_config(page_title="햄스터 브레인", layout="wide", page_icon="🐹")
 st.markdown("""
     <style>
@@ -83,7 +83,6 @@ st.markdown("""
     .sub-metric-label { font-size: 0.85em; font-weight: bold; color: #666; }
     .sub-pct { font-size: 0.8em; color: #777; font-weight: bold; }
 
-    /* [복구] 세련된 경쟁강도 배지 디자인 */
     .status-badge { 
         display: inline-block; padding: 6px 18px; border-radius: 50px; 
         color: white; font-weight: 800; font-size: 0.85em; 
@@ -94,6 +93,7 @@ st.markdown("""
     @media (max-width: 768px) {
         .metric-val { font-size: 2.2em !important; }
         .sub-metric-val { font-size: 1.3em !important; }
+        .quad-box { padding: 15px !important; min-height: 180px !important; }
     }
 
     div[data-testid="stDataFrame"] thead tr th { text-align: center !important; font-weight: bold !important; }
@@ -103,7 +103,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 사이드바 ---
+# --- 세션 관리 및 사이드바 ---
 if 'page' not in st.session_state: st.session_state.page = "HOME"
 if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
@@ -116,8 +116,9 @@ with st.sidebar:
     st.write("---")
     st.markdown("<p style='text-align:center; font-weight:bold; color:#555; font-size:0.85em;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
-# --- 페이지 로직 ---
+# --- 페이지별 로직 ---
 
+# 1. HOME: 메인 키워드 분석
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석")
     with st.form("search_form"):
@@ -126,7 +127,7 @@ if st.session_state.page == "HOME":
         
     if submit and input_kw:
         with st.spinner('🐹 데이터를 정밀 분석 중...'):
-            st.session_state.kw_results = fetch_keyword_data_v23(input_kw)
+            st.session_state.kw_results = fetch_keyword_data_v25(input_kw)
             st.session_state.kw_target = input_kw
             st.rerun()
 
@@ -134,67 +135,64 @@ if st.session_state.page == "HOME":
         res = st.session_state.kw_results
         tgt = st.session_state.kw_target
         try:
-            if res and 'v23_kw' not in res[0]:
+            if res and 'v25_kw' not in res[0]:
                 st.session_state.kw_results = None
                 st.rerun()
                 
-            info = next((i for i in res if i['v23_kw'].replace(" ", "") == tgt.replace(" ", "")), res[0])
+            info = next((i for i in res if i['v25_kw'].replace(" ", "") == tgt.replace(" ", "")), res[0])
             c1, c2 = st.columns(2); c3, c4 = st.columns(2)
             
             with c1:
-                t = info['v23_t']
+                t = info['v25_t']
                 st.markdown(f"""<div class='quad-box'><div class='quad-title'>🔍 월간 검색량</div><div style='display:flex; justify-content:space-around; text-align:center;'>
-                    <div><span class='sub-metric-label'>💻 PC</span><span class='sub-metric-val'>{info['v23_p']:,}</span><span class='sub-pct'>{(info['v23_p']/t*100 if t>0 else 0):.1f}%</span></div>
-                    <div><span class='sub-metric-label'>📱 모바일</span><span class='sub-metric-val'>{info['v23_m']:,}</span><span class='sub-pct'>{(info['v23_m']/t*100 if t>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>💻 PC</span><span class='sub-metric-val'>{info['v25_p']:,}</span><span class='sub-pct'>{(info['v25_p']/t*100 if t>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>📱 모바일</span><span class='sub-metric-val'>{info['v25_m']:,}</span><span class='sub-pct'>{(info['v25_m']/t*100 if t>0 else 0):.1f}%</span></div>
                     <div><span class='sub-metric-label'>➕ 총합</span><span class='sub-metric-val'>{t:,}</span><span class='sub-pct'>100%</span></div>
                 </div></div>""", unsafe_allow_html=True)
             
             with c2:
-                s, col = ("매우 낮음", "#2ecc71") if info['v23_idx'] < 0.5 else ("낮음", "#3498db") if info['v23_idx'] < 1.0 else ("보통", "#f39c12") if info['v23_idx'] < 5.0 else ("높음", "#e67e22") if info['v23_idx'] < 10.0 else ("매우 높음", "#e74c3c")
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📈 경쟁강도</div><div style='text-align:center;'><span class='metric-val'>{info['v23_idx']}</span><span class='status-badge' style='background-color:{col};'>{s}</span></div></div>""", unsafe_allow_html=True)
+                s, col = ("매우 낮음", "#2ecc71") if info['v25_idx'] < 0.5 else ("낮음", "#3498db") if info['v25_idx'] < 1.0 else ("보통", "#f39c12") if info['v25_idx'] < 5.0 else ("높음", "#e67e22") if info['v25_idx'] < 10.0 else ("매우 높음", "#e74c3c")
+                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📈 경쟁강도</div><div style='text-align:center;'><span class='metric-val'>{info['v25_idx']}</span><span class='status-badge' style='background-color:{col};'>{s}</span></div></div>""", unsafe_allow_html=True)
             
             with c3:
-                d = info['v23_d']
+                d = info['v25_d']
                 st.markdown(f"""<div class='quad-box'><div class='quad-title'>📚 콘텐츠 누적 발행</div><div style='display:flex; justify-content:space-around; text-align:center;'>
-                    <div><span class='sub-metric-label'>✍️ 블로그</span><span class='sub-metric-val'>{info['v23_b']:,}</span><span class='sub-pct'>{(info['v23_b']/d*100 if d>0 else 0):.1f}%</span></div>
-                    <div><span class='sub-metric-label'>👥 카페</span><span class='sub-metric-val'>{info['v23_c']:,}</span><span class='sub-pct'>{(info['v23_c']/d*100 if d>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>✍️ 블로그</span><span class='sub-metric-val'>{info['v25_b']:,}</span><span class='sub-pct'>{(info['v25_b']/d*100 if d>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>👥 카페</span><span class='sub-metric-val'>{info['v25_c']:,}</span><span class='sub-pct'>{(info['v25_c']/d*100 if d>0 else 0):.1f}%</span></div>
                     <div><span class='sub-metric-label'>➕ 총합</span><span class='sub-metric-val'>{d:,}</span><span class='sub-pct'>100%</span></div>
                 </div></div>""", unsafe_allow_html=True)
             
             with c4:
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div style='text-align:center;'><span class='metric-val'>{info['v23_r']}</span><span class='sub-metric-label' style='font-size:1.5em; display:inline;'>건</span></div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div style='text-align:center;'><span class='metric-val'>{info['v25_r']}</span><span class='sub-metric-label' style='font-size:1.5em; display:inline;'>건</span></div></div>""", unsafe_allow_html=True)
             
             st.divider()
             st.subheader("📋 연관 키워드 상세 리스트")
-            
-            # [디자인 복구] 표 높이 상향 (850)
             df = pd.DataFrame(res)
-            m_cols = [
-                ("키워드", " "), ("월간 검색량", "PC"), ("월간 검색량", "모바일"), ("월간 검색량", "총합"),
-                ("콘텐츠 누적발행", "블로그"), ("콘텐츠 누적발행", "카페"), ("콘텐츠 누적발행", "총합"),
-                ("최근 한 달\n발행량", " "), ("경쟁강도", " ")
-            ]
-            df_display = df[["v23_kw", "v23_p", "v23_m", "v23_t", "v23_b", "v23_c", "v23_d", "v23_r", "v23_idx"]]
+            m_cols = [("키워드", " "), ("월간 검색량", "PC"), ("월간 검색량", "모바일"), ("월간 검색량", "총합"), ("콘텐츠 누적발행", "블로그"), ("콘텐츠 누적발행", "카페"), ("콘텐츠 누적발행", "총합"), ("최근 한 달\n발행량", " "), ("경쟁강도", " ")]
+            df_display = df[["v25_kw", "v25_p", "v25_m", "v25_t", "v25_b", "v25_c", "v25_d", "v25_r", "v25_idx"]]
             df_display.columns = pd.MultiIndex.from_tuples(m_cols)
-            
-            st.dataframe(
-                df_display.style.set_properties(**{'text-align': 'center'})
-                          .background_gradient(cmap='YlOrRd', subset=[("경쟁강도", " ")]), 
-                use_container_width=True, 
-                hide_index=True, 
-                height=850  # 높이를 더 키워 스크롤 최소화
-            )
-        except: st.warning("⚠️ 캐시 데이터를 갱신 중입니다. 'C' 키를 한 번만 눌러주세요!")
+            st.dataframe(df_display.style.set_properties(**{'text-align': 'center'}).background_gradient(cmap='YlOrRd', subset=[("경쟁강도", " ")]), use_container_width=True, hide_index=True, height=650)
+        except: st.warning("⚠️ 캐시 갱신이 필요합니다. 'C' 키를 눌러주세요!")
 
+# 2. SHOP: 쇼핑 트렌드 복구 (8개 카테고리 4x2 배치)
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드")
-    cats = {"💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식", "⚽ 레저": "운동", "🏠 생활": "생활용품"}
-    cols = st.columns(3)
-    for idx, (n, q) in enumerate(cats.items()):
-        trends = get_naver_trends(q)
-        html = "".join([f"<div style='margin-bottom:8px; text-align:left;'><span style='color:#F4B742; font-weight:bold;'>{idx+1}</span> {v}</div>" for idx, v in enumerate(trends)])
-        cols[idx % 3].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:350px;'><h4>{n}</h4><br>{html}</div>", unsafe_allow_html=True)
+    cats = {
+        "💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식",
+        "⚽ 레저": "운동", "🏠 생활": "생활용품", "💻 가전": "전자제품", "🛋️ 소품": "인테리어"
+    }
+    items = list(cats.items())
+    # 4개씩 두 줄로 배치 (총 8개)
+    for i in range(0, 8, 4):
+        cols = st.columns(4)
+        for j in range(4):
+            if i + j < len(items):
+                n, q = items[i+j]
+                trends = get_naver_trends(q)
+                html = "".join([f"<div style='margin-bottom:8px; text-align:left;'><span style='color:#F4B742; font-weight:bold;'>{idx+1}</span> {v}</div>" for idx, v in enumerate(trends)])
+                cols[j].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:350px;'><h4>{n}</h4><br>{html}</div>", unsafe_allow_html=True)
 
+# 3. NEWS: 뉴스 이슈
 elif st.session_state.page == "NEWS":
     st.title("📰 오늘의 뉴스 이슈")
     news_cats = {"🗞️ 종합": "종합", "💰 경제": "경제", "💻 IT": "IT", "🌿 생활": "생활"}

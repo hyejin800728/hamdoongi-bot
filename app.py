@@ -115,7 +115,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 사이드바 ---
+# --- 세션 관리 ---
 if 'page' not in st.session_state: st.session_state.page = "HOME"
 if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
@@ -143,19 +143,19 @@ if st.session_state.page == "HOME":
                 st.rerun()
 
     if st.session_state.get('kw_results'):
-        df = pd.DataFrame(st.session_state.kw_results)
-        if 'PC 검색량' not in df.columns:
+        df_raw = pd.DataFrame(st.session_state.kw_results)
+        if 'PC 검색량' not in df_raw.columns:
             st.warning("⚠️ 캐시를 초기화해 주세요! (키보드 'C' 클릭)")
             st.stop()
             
         target = st.session_state.kw_target
-        seed_data = df[df['키워드'].str.replace(" ", "") == target.replace(" ", "")]
-        info = seed_data.iloc[0] if not seed_data.empty else df.iloc[0]
+        seed_data = df_raw[df_raw['키워드'].str.replace(" ", "") == target.replace(" ", "")]
+        info = seed_data.iloc[0] if not seed_data.empty else df_raw.iloc[0]
 
+        # 1. 4분할 레이아웃 (정렬 유지)
         c1, c2 = st.columns(2)
         c3, c4 = st.columns(2)
 
-        # 1. 월간 검색량 (라벨 추가)
         with c1:
             tot = info['총 검색량']
             st.markdown(f"""<div class='quad-box'><div class='quad-title'>🔍 월간 검색량</div><div class='stat-container'>
@@ -164,7 +164,6 @@ if st.session_state.page == "HOME":
                 <div class='stat-item'><div class='stat-icon'>➕</div><div class='stat-label'>전체</div><div class='stat-val'>{tot:,}</div><div class='stat-pct'>100%</div></div>
             </div></div>""", unsafe_allow_html=True)
 
-        # 2. 경쟁강도
         with c2:
             comp = info['경쟁 강도']
             status, color = ("매우 낮음", "#2ecc71") if comp < 0.5 else ("낮음", "#3498db") if comp < 1.0 else ("보통", "#f39c12") if comp < 5.0 else ("높음", "#e67e22") if comp < 10.0 else ("매우 높음", "#e74c3c")
@@ -172,7 +171,6 @@ if st.session_state.page == "HOME":
                 <div class='metric-val'>{comp}</div><span class='status-badge' style='background-color:{color};'>{status}</span>
                 <div class='sub-info'>검색량 대비 문서 발행 비율</div></div></div>""", unsafe_allow_html=True)
 
-        # 3. 콘텐츠 누적 발행 (라벨 추가)
         with c3:
             doc_tot = info['총 누적문서']
             st.markdown(f"""<div class='quad-box'><div class='quad-title'>📚 콘텐츠 누적 발행</div><div class='stat-container'>
@@ -181,15 +179,33 @@ if st.session_state.page == "HOME":
                 <div class='stat-item'><div class='stat-icon'>➕</div><div class='stat-label'>전체</div><div class='stat-val'>{doc_tot:,}</div><div class='stat-pct'>100%</div></div>
             </div></div>""", unsafe_allow_html=True)
 
-        # 4. 최근 한 달 발행
         with c4:
             st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div class='center-content'>
                 <div class='metric-val'>{info['최근 한 달 발행량']}건</div><div class='sub-info'>최신 데이터 100건 중 30일 이내 등록된 글</div></div></div>""", unsafe_allow_html=True)
         
         st.divider()
-        st.dataframe(df.style.background_gradient(cmap='YlOrRd', subset=['경쟁 강도']), use_container_width=True, hide_index=True, height=580)
+        st.subheader("📋 연관 키워드 상세 리스트")
 
-# (SHOP, NEWS, GOOGLE 페이지 로직 유지)
+        # 2. 표 구조 개편 (MultiIndex 적용)
+        display_df = df_raw.copy()
+        display_df.columns = [
+            "키워드", "PC", "모바일", "총합", "블로그", "카페", "총합", "최근한달", "경쟁강도"
+        ]
+        multi_cols = [
+            ("키워드", ""), 
+            ("검색량", "PC"), ("검색량", "모바일"), ("검색량", "총합"),
+            ("누적발행", "블로그"), ("누적발행", "카페"), ("누적발행", "총합"),
+            ("최근한달", ""), ("경쟁강도", "")
+        ]
+        display_df.columns = pd.MultiIndex.from_tuples(multi_cols)
+        
+        # 표 출력 및 경쟁강도 강조
+        st.dataframe(
+            display_df.style.background_gradient(cmap='YlOrRd', subset=[('경쟁강도', '')]),
+            use_container_width=True, hide_index=True, height=580
+        )
+
+# (쇼핑, 뉴스, 구글 페이지 로직 유지)
 elif st.session_state.page == "SHOP":
     st.title("🛍️ 실시간 쇼핑 트렌드")
     shop_cats = {"💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식", "⚽ 레저": "운동", "🏠 생활": "생활용품", "💻 가전": "전자제품", "🛋️ 소품": "인테리어"}

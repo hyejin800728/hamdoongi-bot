@@ -8,7 +8,7 @@ import base64
 import datetime
 from pytrends.request import TrendReq
 
-# --- [보안] Streamlit Secrets 적용 ---
+# --- [보안] Streamlit Secrets ---
 NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
 NAVER_CLIENT_SECRET = st.secrets["NAVER_CLIENT_SECRET"]
 AD_ACCESS_KEY = st.secrets["AD_ACCESS_KEY"]
@@ -27,9 +27,9 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- [데이터 수집] 에러 방지를 위해 고유 영문 키 사용 ---
+# --- [데이터 수집] 캐시 충돌 방지를 위해 함수명 변경 ---
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_keyword_data_safe(target_kw):
+def fetch_keyword_data_v3(target_kw):
     clean_kw = target_kw.replace(" ", "")
     uri = "/keywordstool"
     headers = get_header("GET", uri, AD_ACCESS_KEY, AD_SECRET_KEY, AD_CUSTOMER_ID)
@@ -57,7 +57,6 @@ def fetch_keyword_data_safe(target_kw):
             rec_v = sum(1 for post in blog_res.get('items', []) if post.get('postdate', '00000000') >= thirty_days_ago)
             cafe_v = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_headers).json().get('total', 0)
             
-            # [핵심] 내부 데이터 키는 절대 변하지 않는 영문으로 고정하여 KeyError 방지
             results.append({
                 "kw": kw, "pc_v": pc_v, "mo_v": mo_v, "tot_s": tot_s,
                 "blog_v": blog_v, "cafe_v": cafe_v, "tot_d": blog_v + cafe_v,
@@ -73,11 +72,16 @@ st.markdown("""
     .stApp { background-color: #ffffff; }
     [data-testid="stSidebar"] { background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }
     
-    /* 1. 분석 시작 버튼 황금색 강제 적용 */
-    div[data-testid="stFormSubmitButton"] button {
-        background-color: #F4B742 !important; color: white !important;
-        border-radius: 12px !important; border: none !important;
-        font-weight: bold !important; height: 3.5em !important; width: 100% !important;
+    /* 1. 분석 시작 버튼 크기 및 컬러 강제 고정 */
+    div[data-testid="stForm"] div[data-testid="stFormSubmitButton"] button {
+        background-color: #F4B742 !important;
+        color: white !important;
+        border-radius: 12px !important;
+        border: none !important;
+        font-weight: bold !important;
+        height: 3.8em !important;
+        width: 100% !important;
+        display: block !important;
     }
 
     /* 2. 대시보드 박스 헤더: 왼쪽 정렬 */
@@ -88,7 +92,7 @@ st.markdown("""
     .metric-val { font-size: 2.8em; font-weight: 800; color: #333; display: inline-block; }
     .status-badge { display: inline-block; padding: 5px 15px; border-radius: 20px; color: white; font-weight: bold; font-size: 0.8em; margin-left: 5px; vertical-align: middle; }
 
-    /* 3. 표 헤더 디자인 강제 주입: 가운데 정렬 및 볼드 */
+    /* 3. [핵심] 표 헤더 디자인 강제 주입: 가운데 정렬 및 볼드 */
     div[data-testid="stDataFrame"] thead tr th {
         text-align: center !important;
         vertical-align: middle !important;
@@ -98,12 +102,12 @@ st.markdown("""
     }
     div[data-testid="stDataFrame"] td { text-align: center !important; }
 
-    /* 4. 시스템 Running 메시지 숨기기 */
+    /* 4. 시스템 알림 숨기기 */
     [data-testid="stStatusWidget"] { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 세션 관리 및 사이드바 복구 ---
+# --- 사이드바 메뉴 ---
 if 'page' not in st.session_state: st.session_state.page = "HOME"
 if 'kw_results' not in st.session_state: st.session_state.kw_results = None
 
@@ -111,37 +115,38 @@ with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align:center;'>햄스터 브레인</h2>", unsafe_allow_html=True)
     st.write("---")
-    # 메뉴 버튼들 복구
     if st.button("🏠 메인 키워드 분석", use_container_width=True): st.session_state.page = "HOME"
     if st.button("🛍️ 쇼핑 인기 트렌드", use_container_width=True): st.session_state.page = "SHOP"
     if st.button("📰 오늘의 뉴스 이슈", use_container_width=True): st.session_state.page = "NEWS"
     if st.button("🌐 구글 실시간 트렌드", use_container_width=True): st.session_state.page = "GOOGLE"
     st.write("---")
-    st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 햄둥지둥 일상보고서🐹💭</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; font-weight:bold; color:#555;'>햄둥이의 일상보고서🐹💭</p>", unsafe_allow_html=True)
 
-# --- 메인 페이지 로직 ---
+# --- [페이지 로직] ---
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석")
-    with st.form("search_form", clear_on_submit=False):
+    with st.form("search_form"):
         input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 조말론")
-        submit_button = st.form_submit_button("실시간 통합 분석 시작")
+        # 버튼을 폼 안에서 가로 꽉 차게 설정
+        submit_button = st.form_submit_button("실시간 통합 분석 시작", use_container_width=True)
         
     if submit_button and input_kw:
         with st.spinner('🐹 데이터를 정밀 분석 중...'):
-            st.session_state.kw_results = fetch_keyword_data_safe(input_kw)
+            # 새 함수 호출로 캐시 강제 갱신
+            st.session_state.kw_results = fetch_keyword_data_v3(input_kw)
             st.session_state.kw_target = input_kw
             st.rerun()
 
     if st.session_state.get('kw_results'):
         results = st.session_state.kw_results
         target = st.session_state.kw_target
-        # [안전] 내부 영문 키 'kw'를 사용하여 데이터 추출
+        # 에러 방지: 안전하게 데이터 추출
         info = next((i for i in results if i['kw'].replace(" ", "") == target.replace(" ", "")), results[0])
 
         c1, c2 = st.columns(2)
         c3, c4 = st.columns(2)
 
-        # 1. 월간 검색량 (타이틀 왼쪽)
+        # 4분할 박스 (헤더 왼쪽 정렬)
         with c1:
             tot = info['tot_s']
             st.markdown(f"""<div class='quad-box'><div class='quad-title'>🔍 월간 검색량</div><div style='display:flex; justify-content:space-around; text-align:center;'>
@@ -150,7 +155,6 @@ if st.session_state.page == "HOME":
                 <div>➕<br><small><b>전체</b></small><br><b>{tot:,}</b><br><small>100%</small></div>
             </div></div>""", unsafe_allow_html=True)
 
-        # 2. 경쟁강도 (가운데 정렬)
         with c2:
             comp = info['comp_i']
             status, color = ("매우 낮음", "#2ecc71") if comp < 0.5 else ("낮음", "#3498db") if comp < 1.0 else ("보통", "#f39c12") if comp < 5.0 else ("높음", "#e67e22") if comp < 10.0 else ("매우 높음", "#e74c3c")
@@ -158,7 +162,6 @@ if st.session_state.page == "HOME":
                 <div class='metric-val'>{comp}</div><span class='status-badge' style='background-color:{color};'>{status}</span>
                 <div style='color:#777; font-size:0.9em; margin-top:10px; font-weight:bold; text-align:center;'>검색량 대비 문서 발행 비율</div></div></div>""", unsafe_allow_html=True)
 
-        # 3. 콘텐츠 누적 발행 (타이틀 왼쪽)
         with c3:
             doc_tot = info['tot_d']
             st.markdown(f"""<div class='quad-box'><div class='quad-title'>📚 콘텐츠 누적 발행</div><div style='display:flex; justify-content:space-around; text-align:center;'>
@@ -167,15 +170,14 @@ if st.session_state.page == "HOME":
                 <div>➕<br><small><b>전체</b></small><br><b>{doc_tot:,}</b><br><small>100%</small></div>
             </div></div>""", unsafe_allow_html=True)
 
-        # 4. 최근 한 달 발행 (가운데 정렬)
         with c4:
             st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div class='center-content'>
-                <div class='metric-val'>{info['rec_v']}건</div><div style='color:#777; font-size:0.9em; margin-top:10px; font-weight:bold; text-align:center;'>최신 데이터 100건 중 30일 이내 등록된 글</div></div></div>""", unsafe_allow_html=True)
+                <div class='metric-val'>{info['rec_v']}건</div><div style='color:#777; font-size:0.9em; margin-top:10px; font-weight:bold; text-align:center;'>최근 30일 이내 등록된 글</div></div></div>""", unsafe_allow_html=True)
         
         st.divider()
         st.subheader("📋 연관 키워드 상세 리스트")
 
-        # [디자인 완성] 표 계층 구조 생성 (MultiIndex)
+        # [디자인 최적화] 계층형 표 병합 효과
         df = pd.DataFrame(results)
         multi_cols = [
             ("키워드", " "), ("월간 검색량", "PC"), ("월간 검색량", "모바일"), ("월간 검색량", "총합"),
@@ -183,17 +185,11 @@ if st.session_state.page == "HOME":
             ("최근 한 달\n발행량", " "), ("경쟁강도", " ")
         ]
         # 내부 영문 데이터를 표 구조에 맞춰 매핑
-        df = df[["kw", "pc_v", "mo_v", "tot_s", "blog_v", "cafe_v", "tot_d", "rec_v", "comp_i"]]
-        df.columns = pd.MultiIndex.from_tuples(multi_cols)
+        table_data = df[["kw", "pc_v", "mo_v", "tot_s", "blog_v", "cafe_v", "tot_d", "rec_v", "comp_i"]]
+        table_data.columns = pd.MultiIndex.from_tuples(multi_cols)
         
-        # 스타일 주입 및 출력
         st.dataframe(
-            df.style.set_properties(**{'text-align': 'center'})
-                    .background_gradient(cmap='YlOrRd', subset=[("경쟁강도", " ")]),
+            table_data.style.set_properties(**{'text-align': 'center'})
+                          .background_gradient(cmap='YlOrRd', subset=[("경쟁강도", " ")]),
             use_container_width=True, hide_index=True, height=580
         )
-
-# 나머지 페이지들 (SHOP, NEWS, GOOGLE) 생략 가능하나 로직 복구용
-elif st.session_state.page == "SHOP": st.title("🛍️ 쇼핑 인기 트렌드")
-elif st.session_state.page == "NEWS": st.title("📰 오늘의 뉴스 이슈")
-elif st.session_state.page == "GOOGLE": st.title("🌐 구글 실시간 트렌드")

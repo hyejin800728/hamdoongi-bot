@@ -25,9 +25,9 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- [데이터 수집] 캐시 리셋을 위해 v11 사용 ---
+# --- [데이터 수집] 캐시 리셋을 위해 v12 사용 ---
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_keyword_data_v11(target_kw):
+def fetch_keyword_data_final_v12(target_kw):
     clean_kw = target_kw.replace(" ", "")
     uri = "/keywordstool"
     headers = get_header("GET", uri, AD_ACCESS_KEY, AD_SECRET_KEY, AD_CUSTOMER_ID)
@@ -43,9 +43,7 @@ def fetch_keyword_data_v11(target_kw):
 
         for item in all_keywords:
             kw = item['relKeyword']
-            def cl(v):
-                if isinstance(v, str) and '<' in v: return 10
-                return int(v)
+            def cl(v): return 10 if isinstance(v, str) and '<' in v else int(v)
             p, m = cl(item['monthlyPcQcCnt']), cl(item['monthlyMobileQcCnt'])
             t = p + m
             b_res = requests.get(f"https://openapi.naver.com/v1/search/blog.json?query={kw}&display=100", headers=auth_h).json()
@@ -53,12 +51,19 @@ def fetch_keyword_data_v11(target_kw):
             r_v = sum(1 for post in b_res.get('items', []) if post.get('postdate', '00000000') >= thirty_ago)
             c_v = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_h).json().get('total', 0)
             
-            # [안전] 내부 데이터 키를 영문 'k', 'p', 'm' 등으로 고정 (KeyError 해결)
+            # [안전] 내부 데이터 키 고정 (KeyError 해결)
             results.append({
-                "k": kw, "p": p, "m": m, "t": t, "b": b_v, "c": c_v, "d": b_v + c_v, "r": r_v, "i": round((b_v + c_v) / t, 2) if t > 0 else 0
+                "k": kw, "p": p, "m": m, "t": t, "b": b_v, "c": c_v, "d": b_v + c_v, "r": r_v, "idx": round((b_v + c_v) / t, 2) if t > 0 else 0
             })
         return results
     except: return []
+
+# --- 기타 수집 함수 ---
+def get_trends(query):
+    try:
+        res = requests.get(f"https://ac.search.naver.com/nx/ac?q={query}&con=0&ans=2&r_format=json&st=100").json()
+        return [item[0] for item in res['items'][0]][:10]
+    except: return ["데이터 로드 중..."]
 
 # --- [UI 디자인 강제 주입] ---
 st.set_page_config(page_title="햄스터 브레인", layout="wide", page_icon="🐹")
@@ -67,26 +72,28 @@ st.markdown("""
     .stApp { background-color: #ffffff; }
     [data-testid="stSidebar"] { background-color: #FBEECC; border-right: 2px solid #F4B742; min-width: 250px !important; }
     
-    /* 1. 분석 버튼: 황금색 + 가로 꽉 차게 강제 고정 */
+    /* 분석 시작 버튼: 황금색 + 가로 꽉 차게 */
     div[data-testid="stFormSubmitButton"] button {
         background-color: #F4B742 !important; color: white !important;
         border-radius: 12px !important; font-weight: bold !important;
         height: 4em !important; width: 100% !important; border: none !important;
     }
 
-    /* 2. 대시보드 박스 헤더: 왼쪽 정렬 */
+    /* 4분할 박스: 타이틀 왼쪽, 본문 가운데 */
     .quad-box { background-color: #FBEECC; padding: 25px; border-radius: 20px; border-left: 10px solid #F4B742; margin-bottom: 15px; min-height: 220px; }
     .quad-title { font-weight: bold !important; color: #555; font-size: 1.1em; margin-bottom: 15px; text-align: left !important; }
-    
-    /* 3. [최후의 보루] 표 가운데 정렬 및 볼드체 주입 */
-    /* 표 헤더 정렬 */
-    .stDataFrame thead tr th { text-align: center !important; font-weight: bold !important; color: #333 !important; }
-    /* 표 데이터 셀 정렬 */
-    .stDataFrame div[data-testid="stTable"] td { text-align: center !important; }
-    /* 전체 데이터프레임 내 정렬 강제 */
-    [data-testid="stDataFrame"] div { text-align: center !important; }
+    .metric-val { font-size: 2.8em; font-weight: 800; color: #333; display: inline-block; }
+    .status-badge { display: inline-block; padding: 5px 15px; border-radius: 20px; color: white; font-weight: bold; font-size: 0.8em; margin-left: 5px; vertical-align: middle; }
 
-    /* 시스템 UI 정리 */
+    /* [최후의 수단] 표 전체 영역 강제 가운데 정렬/볼드체 주입 */
+    [data-testid="stDataFrame"] thead tr th, [data-testid="stDataFrame"] td {
+        text-align: center !important; vertical-align: middle !important;
+    }
+    [data-testid="stDataFrame"] thead tr th {
+        font-weight: bold !important; color: #333 !important; background-color: #f8f9fa !important;
+    }
+
+    /* 시스템 알림 제거 */
     [data-testid="stStatusWidget"], .stDeployButton { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -103,7 +110,8 @@ with st.sidebar:
     if st.button("📰 오늘의 뉴스 이슈", use_container_width=True): st.session_state.page = "NEWS"
     if st.button("🌐 구글 실시간 트렌드", use_container_width=True): st.session_state.page = "GOOGLE"
 
-# --- 페이지 로직 (HOME) ---
+# --- 페이지 로직 ---
+
 if st.session_state.page == "HOME":
     st.title("📊 메인 키워드 분석")
     with st.form("search_form"):
@@ -112,46 +120,72 @@ if st.session_state.page == "HOME":
         
     if submit and input_kw:
         with st.spinner('🐹 데이터를 분석 중...'):
-            st.session_state.kw_results = fetch_keyword_data_v11(input_kw)
+            st.session_state.kw_results = fetch_keyword_data_final_v12(input_kw)
             st.session_state.kw_target = input_kw
             st.rerun()
 
     if st.session_state.get('kw_results'):
         res = st.session_state.kw_results
         tgt = st.session_state.kw_target
-        # [안전] 영문 키 'k'를 사용하여 KeyError 원천 차단
-        try:
-            info = next((i for i in res if i['k'].replace(" ", "") == tgt.replace(" ", "")), res[0])
-            c1, c2 = st.columns(2); c3, c4 = st.columns(2)
-            with c1:
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>🔍 월간 검색량</div><div style='display:flex; justify-content:space-around; text-align:center;'>
-                    <div>💻<br><small><b>PC</b></small><br><b>{info['p']:,}</b><br><small>{(info['p']/info['t']*100 if info['t']>0 else 0):.1f}%</small></div>
-                    <div>📱<br><small><b>모바일</b></small><br><b>{info['m']:,}</b><br><small>{(info['m']/info['t']*100 if info['t']>0 else 0):.1f}%</small></div>
-                    <div>➕<br><small><b>전체</b></small><br><b>{info['t']:,}</b><br><small>100%</small></div>
-                </div></div>""", unsafe_allow_html=True)
-            with c2:
-                s, col = ("매우 낮음", "#2ecc71") if info['i'] < 0.5 else ("낮음", "#3498db") if info['i'] < 1.0 else ("보통", "#f39c12") if info['i'] < 5.0 else ("높음", "#e67e22") if info['i'] < 10.0 else ("매우 높음", "#e74c3c")
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📈 경쟁강도</div><div style='text-align:center;'><div class='metric-val'>{info['i']}</div><span class='status-badge' style='background-color:{col};'>{s}</span><br><small>검색량 대비 문서 발행 비율</small></div></div>""", unsafe_allow_html=True)
-            with c3:
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📚 콘텐츠 누적 발행</div><div style='display:flex; justify-content:space-around; text-align:center;'>
-                    <div>✍️<br><small><b>블로그</b></small><br><b>{info['b']:,}</b><br><small>{(info['b']/info['d']*100 if info['d']>0 else 0):.1f}%</small></div>
-                    <div>👥<br><small><b>카페</b></small><br><b>{info['c']:,}</b><br><small>{(info['c']/info['d']*100 if info['d']>0 else 0):.1f}%</small></div>
-                    <div>➕<br><small><b>전체</b></small><br><b>{info['d']:,}</b><br><small>100%</small></div>
-                </div></div>""", unsafe_allow_html=True)
-            with c4:
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div style='text-align:center;'><div class='metric-val'>{info['r']}건</div><br><small>최근 30일 이내 등록된 글</small></div></div>""", unsafe_allow_html=True)
-            
-            st.divider()
-            st.subheader("📋 연관 키워드 상세 리스트")
-            df = pd.DataFrame(res)
-            m_cols = [("키워드", " "), ("월간 검색량", "PC"), ("월간 검색량", "모바일"), ("월간 검색량", "총합"), ("콘텐츠 누적발행", "블로그"), ("콘텐츠 누적발행", "카페"), ("콘텐츠 누적발행", "총합"), ("최근 한 달\n발행량", " "), ("경쟁강도", " ")]
-            df = df[["k", "p", "m", "t", "b", "c", "d", "r", "i"]]
-            df.columns = pd.MultiIndex.from_tuples(m_cols)
-            # 가운데 정렬 스타일 적용
-            st.dataframe(df.style.set_properties(**{'text-align': 'center'}).background_gradient(cmap='YlOrRd', subset=[("경쟁강도", " ")]), use_container_width=True, hide_index=True, height=580)
-        except Exception as e: st.error("⚠️ 데이터를 불러오는 중 오류가 발생했습니다. 'C' 키를 눌러 캐시를 지워주세요.")
+        info = next((i for i in res if i['k'].replace(" ", "") == tgt.replace(" ", "")), res[0])
 
-# 나머지 페이지 로직 (원본 유지)
-elif st.session_state.page == "SHOP": st.title("🛍️ 쇼핑 인기 트렌드")
-elif st.session_state.page == "NEWS": st.title("📰 오늘의 뉴스 이슈")
-elif st.session_state.page == "GOOGLE": st.title("🌐 구글 실시간 트렌드")
+        c1, c2 = st.columns(2); c3, c4 = st.columns(2)
+        with c1:
+            st.markdown(f"""<div class='quad-box'><div class='quad-title'>🔍 월간 검색량</div><div style='display:flex; justify-content:space-around; text-align:center;'>
+                <div>💻<br><small><b>PC</b></small><br><b>{info['p']:,}</b><br><small>{(info['p']/info['t']*100 if info['t']>0 else 0):.1f}%</small></div>
+                <div>📱<br><small><b>모바일</b></small><br><b>{info['m']:,}</b><br><small>{(info['m']/info['t']*100 if info['t']>0 else 0):.1f}%</small></div>
+                <div>➕<br><small><b>전체</b></small><br><b>{info['t']:,}</b><br><small>100%</small></div>
+            </div></div>""", unsafe_allow_html=True)
+        with c2:
+            s, col = ("매우 낮음", "#2ecc71") if info['idx'] < 0.5 else ("낮음", "#3498db") if info['idx'] < 1.0 else ("보통", "#f39c12") if info['idx'] < 5.0 else ("높음", "#e67e22") if info['idx'] < 10.0 else ("매우 높음", "#e74c3c")
+            st.markdown(f"""<div class='quad-box'><div class='quad-title'>📈 경쟁강도</div><div style='text-align:center;'><div class='metric-val'>{info['idx']}</div><span class='status-badge' style='background-color:{col};'>{s}</span><br><small>검색량 대비 문서 발행 비율</small></div></div>""", unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""<div class='quad-box'><div class='quad-title'>📚 콘텐츠 누적 발행</div><div style='display:flex; justify-content:space-around; text-align:center;'>
+                <div>✍️<br><small><b>블로그</b></small><br><b>{info['b']:,}</b><br><small>{(info['b']/info['d']*100 if info['d']>0 else 0):.1f}%</small></div>
+                <div>👥<br><small><b>카페</b></small><br><b>{info['c']:,}</b><br><small>{(info['c']/info['d']*100 if info['d']>0 else 0):.1f}%</small></div>
+                <div>➕<br><small><b>전체</b></small><br><b>{info['d']:,}</b><br><small>100%</small></div>
+            </div></div>""", unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div style='text-align:center;'><div class='metric-val'>{info['r']}건</div><br><small>최근 30일 이내 등록된 글</small></div></div>""", unsafe_allow_html=True)
+        
+        st.divider()
+        st.subheader("📋 연관 키워드 상세 리스트")
+        df = pd.DataFrame(res)
+        m_cols = [("키워드", " "), ("월간 검색량", "PC"), ("월간 검색량", "모바일"), ("월간 검색량", "총합"), ("콘텐츠 누적발행", "블로그"), ("콘텐츠 누적발행", "카페"), ("콘텐츠 누적발행", "총합"), ("최근 한 달\n발행량", " "), ("경쟁강도", " ")]
+        df = df[["k", "p", "m", "t", "b", "c", "d", "r", "idx"]]
+        df.columns = pd.MultiIndex.from_tuples(m_cols)
+        st.dataframe(df.style.set_properties(**{'text-align': 'center'}).background_gradient(cmap='YlOrRd', subset=[("경쟁강도", " ")]), use_container_width=True, hide_index=True, height=580)
+
+elif st.session_state.page == "SHOP":
+    st.title("🛍️ 실시간 쇼핑 트렌드")
+    cats = {"💄 뷰티": "화장품", "👗 패션": "의류", "👜 잡화": "가방", "🍎 식품": "간식", "⚽ 레저": "운동", "🏠 생활": "생활용품", "💻 가전": "전자제품", "🛋️ 소품": "인테리어"}
+    items = list(cats.items())
+    for i in range(0, 8, 4):
+        cols = st.columns(4)
+        for j in range(4):
+            n, q = items[i+j]
+            trends = get_trends(q)
+            html = "".join([f"<div style='margin-bottom:8px; text-align:left;'><span style='color:#F4B742; font-weight:bold;'>{idx+1}</span> {v}</div>" for idx, v in enumerate(trends)])
+            cols[j].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:350px;'><h4>{n}</h4><br>{html}</div>", unsafe_allow_html=True)
+
+elif st.session_state.page == "NEWS":
+    st.title("📰 오늘의 뉴스 이슈")
+    cats = {"🗞️ 종합": "종합", "💰 경제": "경제", "💻 IT": "IT", "🌿 생활": "생활"}
+    cols = st.columns(4)
+    for i, (n, q) in enumerate(cats.items()):
+        url = f"https://openapi.naver.com/v1/search/news.json?query={q}&display=7"
+        news = requests.get(url, headers={"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}).json().get('items', [])
+        html = "".join([f"<div style='margin-bottom:10px; font-size:0.85em; text-align:left;'>🔗 <a href='{x['link']}' target='_blank' style='color:#555; text-decoration:none;'>{x['title'][:25].replace('<b>','').replace('</b>','') + '...'}</a></div>" for x in news])
+        cols[i].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:420px;'><h4>{n}</h4><br>{html}</div>", unsafe_allow_html=True)
+
+elif st.session_state.page == "GOOGLE":
+    st.title("🌐 구글 실시간 급상승 트렌드")
+    try:
+        pytrends = TrendReq(hl='ko', tz=540)
+        df = pytrends.trending_searches(pn='south_korea')
+        g_trends = df[0].tolist()[:10]
+        cl, cr = st.columns(2)
+        for idx, v in enumerate(g_trends):
+            col = cl if idx < 5 else cr
+            col.markdown(f"<div style='background-color:#ffffff; padding:15px; border-radius:10px; border:1px solid #eee; margin-bottom:10px; border-left: 5px solid #4285F4; text-align:left;'>{idx+1}. {v}</div>", unsafe_allow_html=True)
+    except: st.error("구글 서버와 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.")

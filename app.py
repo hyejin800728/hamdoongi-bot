@@ -26,36 +26,33 @@ def get_header(method, uri, api_key, secret_key, customer_id):
         "X-Signature": base64.b64encode(signature).decode()
     }
 
-# --- [신규] 초강력 실시간 쇼핑 크롤링 엔진 (v29) ---
+# --- [수정] 글자 깨짐 방지 로직이 추가된 크롤링 엔진 (v30) ---
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_realtime_shopping_v29(category_id):
+def fetch_realtime_shopping_v30(category_id):
     url = f"https://search.shopping.naver.com/best/category/click?categoryCategoryId=ALL&categoryChildCategoryId=ALL&categoryDemo=ALL&categoryRootCategoryId={category_id}&period=P1D"
-    # [개선] 더 강력해진 User-Agent 변장술
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer": "https://search.shopping.naver.com/best/home"
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
     }
     try:
         res = requests.get(url, headers=headers, timeout=12)
-        if res.status_code != 200: return ["서버 연결 확인 중..."]
+        # [핵심] 인코딩을 UTF-8로 강제 설정하여 한글 깨짐 방지
+        res.encoding = 'utf-8' 
         
         soup = BeautifulSoup(res.text, 'html.parser')
-        # [개선] 정규표현식을 사용해 'title'이 들어간 모든 링크를 끈질기게 수집
         items = soup.find_all('a', class_=re.compile("title|product_link|item_title"))
         
         if not items:
-            # 텍스트가 포함된 모든 a 태그 중 상품명일 가능성이 높은 것 추출
             items = [a for a in soup.find_all('a') if len(a.get_text(strip=True)) > 5 and 'category' not in a.get('href', '')]
         
         results = [item.get_text(strip=True) for item in items[:10]]
-        return results if results else ["데이터를 갱신하고 있습니다..."]
+        return results if results else ["데이터 갱신 중..."]
     except:
-        return ["데이터 로드 지연 중..."]
+        return ["연결 확인 중..."]
 
-# --- 메인 데이터 수집 (v29) ---
+# --- 메인 데이터 수집 (v30) ---
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_keyword_data_v29(target_kw):
+def fetch_keyword_data_v30(target_kw):
     clean_kw = target_kw.replace(" ", "")
     uri = "/keywordstool"
     headers = get_header("GET", uri, AD_ACCESS_KEY, AD_SECRET_KEY, AD_CUSTOMER_ID)
@@ -73,11 +70,11 @@ def fetch_keyword_data_v29(target_kw):
             b_v = b_res.get('total', 0)
             r_v = sum(1 for post in b_res.get('items', []) if post.get('postdate', '00000000') >= (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y%m%d'))
             c_v = requests.get(f"https://openapi.naver.com/v1/search/cafearticle.json?query={kw}&display=1", headers=auth_h).json().get('total', 0)
-            results.append({"v29_kw": kw, "v29_p": p, "v29_m": m, "v29_t": t, "v29_b": b_v, "v29_c": c_v, "v29_d": b_v + c_v, "v29_r": r_v, "v29_idx": round((b_v + c_v) / t, 2) if t > 0 else 0})
+            results.append({"v30_kw": kw, "v30_p": p, "v30_m": m, "v30_t": t, "v30_b": b_v, "v30_c": c_v, "v30_d": b_v + c_v, "v30_r": r_v, "v30_idx": round((b_v + c_v) / t, 2) if t > 0 else 0})
         return results
     except: return []
 
-# --- [UI 디자인 정밀 고정] ---
+# --- [UI 디자인] ---
 st.set_page_config(page_title="햄스터 브레인", layout="wide", page_icon="🐹")
 st.markdown("""
     <style>
@@ -97,7 +94,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 사이드바 메뉴 복구 ---
+# --- 사이드바 메뉴 ---
 if 'page' not in st.session_state: st.session_state.page = "HOME"
 with st.sidebar:
     st.markdown("<div style='text-align:center; font-size:60px;'>🐹</div><h2 style='text-align:center;'>햄스터 브레인</h2>", unsafe_allow_html=True)
@@ -117,41 +114,41 @@ if st.session_state.page == "HOME":
         input_kw = st.text_input("분석할 키워드를 입력하세요", placeholder="예: 조말론")
         submit = st.form_submit_button("실시간 통합 분석 시작", use_container_width=True)
     if submit and input_kw:
-        st.session_state.kw_results = fetch_keyword_data_v29(input_kw)
+        st.session_state.kw_results = fetch_keyword_data_v30(input_kw)
         st.session_state.kw_target = input_kw
         st.rerun()
     if st.session_state.get('kw_results'):
         res = st.session_state.kw_results
         tgt = st.session_state.kw_target
         try:
-            info = next((i for i in res if i['v29_kw'].replace(" ", "") == tgt.replace(" ", "")), res[0])
+            info = next((i for i in res if i['v30_kw'].replace(" ", "") == tgt.replace(" ", "")), res[0])
             c1, c2 = st.columns(2); c3, c4 = st.columns(2)
             with c1:
-                t = info['v29_t']
+                t = info['v30_t']
                 st.markdown(f"""<div class='quad-box'><div class='quad-title'>🔍 월간 검색량</div><div style='display:flex; justify-content:space-around; text-align:center;'>
-                    <div><span class='sub-metric-label'>💻 PC</span><span class='sub-metric-val'>{info['v29_p']:,}</span><span class='sub-pct'>{(info['v29_p']/t*100 if t>0 else 0):.1f}%</span></div>
-                    <div><span class='sub-metric-label'>📱 모바일</span><span class='sub-metric-val'>{info['v29_m']:,}</span><span class='sub-pct'>{(info['v29_m']/t*100 if t>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>💻 PC</span><span class='sub-metric-val'>{info['v30_p']:,}</span><span class='sub-pct'>{(info['v30_p']/t*100 if t>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>📱 모바일</span><span class='sub-metric-val'>{info['v30_m']:,}</span><span class='sub-pct'>{(info['v30_m']/t*100 if t>0 else 0):.1f}%</span></div>
                     <div><span class='sub-metric-label'>➕ 총합</span><span class='sub-metric-val'>{t:,}</span><span class='sub-pct'>100%</span></div>
                 </div></div>""", unsafe_allow_html=True)
             with c2:
-                s, col = ("매우 낮음", "#2ecc71") if info['v29_idx'] < 0.5 else ("낮음", "#3498db") if info['v29_idx'] < 1.0 else ("보통", "#f39c12") if info['v29_idx'] < 5.0 else ("높음", "#e67e22") if info['v29_idx'] < 10.0 else ("매우 높음", "#e74c3c")
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📈 경쟁강도</div><div style='text-align:center;'><span class='metric-val'>{info['v29_idx']}</span><span class='status-badge' style='background-color:{col};'>{s}</span></div></div>""", unsafe_allow_html=True)
+                s, col = ("매우 낮음", "#2ecc71") if info['v30_idx'] < 0.5 else ("낮음", "#3498db") if info['v30_idx'] < 1.0 else ("보통", "#f39c12") if info['v30_idx'] < 5.0 else ("높음", "#e67e22") if info['v30_idx'] < 10.0 else ("매우 높음", "#e74c3c")
+                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📈 경쟁강도</div><div style='text-align:center;'><span class='metric-val'>{info['v30_idx']}</span><span class='status-badge' style='background-color:{col};'>{s}</span></div></div>""", unsafe_allow_html=True)
             with c3:
-                d = info['v29_d']
+                d = info['v30_d']
                 st.markdown(f"""<div class='quad-box'><div class='quad-title'>📚 콘텐츠 누적 발행</div><div style='display:flex; justify-content:space-around; text-align:center;'>
-                    <div><span class='sub-metric-label'>✍️ 블로그</span><span class='sub-metric-val'>{info['v29_b']:,}</span><span class='sub-pct'>{(info['v29_b']/d*100 if d>0 else 0):.1f}%</span></div>
-                    <div><span class='sub-metric-label'>👥 카페</span><span class='sub-metric-val'>{info['v29_c']:,}</span><span class='sub-pct'>{(info['v29_c']/d*100 if d>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>✍️ 블로그</span><span class='sub-metric-val'>{info['v30_b']:,}</span><span class='sub-pct'>{(info['v30_b']/d*100 if d>0 else 0):.1f}%</span></div>
+                    <div><span class='sub-metric-label'>👥 카페</span><span class='sub-metric-val'>{info['v30_c']:,}</span><span class='sub-pct'>{(info['v30_c']/d*100 if d>0 else 0):.1f}%</span></div>
                     <div><span class='sub-metric-label'>➕ 총합</span><span class='sub-metric-val'>{d:,}</span><span class='sub-pct'>100%</span></div>
                 </div></div>""", unsafe_allow_html=True)
             with c4:
-                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div style='text-align:center;'><span class='metric-val'>{info['v29_r']}</span><span class='sub-metric-label' style='font-size:1.5em; display:inline;'>건</span></div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class='quad-box'><div class='quad-title'>📅 최근 한 달 발행</div><div style='text-align:center;'><span class='metric-val'>{info['v30_r']}</span><span class='sub-metric-label' style='font-size:1.5em; display:inline;'>건</span></div></div>""", unsafe_allow_html=True)
             st.divider()
             df = pd.DataFrame(res)
             m_cols = [("키워드", " "), ("월간 검색량", "PC"), ("월간 검색량", "모바일"), ("월간 검색량", "총합"), ("콘텐츠 누적발행", "블로그"), ("콘텐츠 누적발행", "카페"), ("콘텐츠 누적발행", "총합"), ("최근 한 달\n발행량", " "), ("경쟁강도", " ")]
-            df_display = df[["v29_kw", "v29_p", "v29_m", "v29_t", "v29_b", "v29_c", "v29_d", "v29_r", "v29_idx"]]
+            df_display = df[["v30_kw", "v30_p", "v30_m", "v30_t", "v30_b", "v30_c", "v30_d", "v30_r", "v30_idx"]]
             df_display.columns = pd.MultiIndex.from_tuples(m_cols)
             st.dataframe(df_display.style.set_properties(**{'text-align': 'center'}).background_gradient(cmap='YlOrRd', subset=[("경쟁강도", " ")]), use_container_width=True, hide_index=True, height=650)
-        except: st.warning("⚠️ 캐시 갱신이 필요합니다. 'C' 키를 한 번만 눌러주세요!")
+        except: st.warning("⚠️ 캐시 갱신이 필요합니다. 'C' 키를 한 번 눌러주세요!")
 
 elif st.session_state.page == "KEYWORD":
     st.title("🛍️ 카테고리별 인기 키워드")
@@ -161,9 +158,9 @@ elif st.session_state.page == "KEYWORD":
         cols = st.columns(4)
         for j in range(4):
             n, q = items[i+j]
-            t_data = requests.get(f"https://ac.search.naver.com/nx/ac?q={q}&con=0&ans=2&r_format=json&st=100").json()['items'][0]
-            html_text = "".join([f"<div style='margin-bottom:8px; text-align:left;'><span style='color:#F4B742; font-weight:bold;'>{idx+1}</span> {v[0]}</div>" for idx, v in enumerate(t_data[:10])])
-            cols[j].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:350px;'><h4>{n}</h4><br>{html_text}</div>", unsafe_allow_html=True)
+            t = requests.get(f"https://ac.search.naver.com/nx/ac?q={q}&con=0&ans=2&r_format=json&st=100").json()['items'][0]
+            h = "".join([f"<div style='margin-bottom:8px; text-align:left;'><span style='color:#F4B742; font-weight:bold;'>{idx+1}</span> {v[0]}</div>" for idx, v in enumerate(t[:10])])
+            cols[j].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:350px;'><h4>{n}</h4><br>{h}</div>", unsafe_allow_html=True)
 
 elif st.session_state.page == "TREND":
     st.title("🔥 실시간 쇼핑 트렌드 (BEST 100)")
@@ -172,10 +169,10 @@ elif st.session_state.page == "TREND":
     for i in range(0, 8, 4):
         cols = st.columns(4)
         for j in range(4):
-            name, cid = items[i+j]
-            trends = fetch_realtime_shopping_v29(cid)
-            html_text = "".join([f"<div style='margin-bottom:8px; text-align:left; font-size:0.9em;'><span style='color:#F4B742; font-weight:bold;'>{idx+1}</span> {v}</div>" for idx, v in enumerate(trends)])
-            cols[j].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:450px;'><h4>{name}</h4><br>{html_text}</div>", unsafe_allow_html=True)
+            n, cid = items[i+j]
+            trends = fetch_realtime_shopping_v30(cid)
+            h = "".join([f"<div style='margin-bottom:8px; text-align:left; font-size:0.9em;'><span style='color:#F4B742; font-weight:bold;'>{idx+1}</span> {v}</div>" for idx, v in enumerate(trends)])
+            cols[j].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:450px;'><h4>{n}</h4><br>{h}</div>", unsafe_allow_html=True)
 
 elif st.session_state.page == "NEWS":
     st.title("📰 오늘의 뉴스 이슈")
@@ -183,6 +180,6 @@ elif st.session_state.page == "NEWS":
     cols = st.columns(4)
     for i, (n, q) in enumerate(news_cats.items()):
         url = f"https://openapi.naver.com/v1/search/news.json?query={q}&display=7"
-        news_list = requests.get(url, headers={"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}).json().get('items', [])
-        html_text = "".join([f"<div style='margin-bottom:10px; font-size:0.85em; text-align:left;'>🔗 <a href='{x['link']}' target='_blank' style='color:#555; text-decoration:none;'>{x['title'][:25].replace('<b>','').replace('</b>','') + '...'}</a></div>" for x in news_list])
-        cols[i].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:420px;'><h4>{n}</h4><br>{html_text}</div>", unsafe_allow_html=True)
+        news = requests.get(url, headers={"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}).json().get('items', [])
+        h = "".join([f"<div style='margin-bottom:10px; font-size:0.85em; text-align:left;'>🔗 <a href='{x['link']}' target='_blank' style='color:#555; text-decoration:none;'>{x['title'][:25].replace('<b>','').replace('</b>','') + '...'}</a></div>" for x in news])
+        cols[i].markdown(f"<div style='border:1px solid #eee; border-radius:12px; padding:15px; min-height:420px;'><h4>{n}</h4><br>{h}</div>", unsafe_allow_html=True)
